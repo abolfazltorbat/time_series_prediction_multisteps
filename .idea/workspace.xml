@@ -5,168 +5,19 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b9bfeca3-2890-46af-a5f2-4d9e7b6a52e3" name="Changes" comment="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_102859.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_103514.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_103825.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_105204.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_110354.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_113243.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_113523.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_metrics_20241030_113848.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_prediction_plot_20241030_103825.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Attention_prediction_plot_20241030_104020.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_future_prediction.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_095855.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100026.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100116.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100211.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100247.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100313.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100338.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100408.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100605.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100700.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_100845.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_102257.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_102529.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_102557.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_102628.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_102930.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_104106.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_104748.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_133126.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_134131.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_135417.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_151149.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_153815.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241029_160729.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241030_101501.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241030_101639.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241030_101735.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241030_101948.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_metrics_20241030_102217.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_095855.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100026.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100116.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100211.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100247.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100313.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100338.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100408.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100605.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100700.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_100845.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_102257.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_102529.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_102557.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_102628.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_102930.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_104106.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_104748.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_133126.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_134131.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_135417.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_151149.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_153815.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241029_160729.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241030_101501.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241030_101639.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241030_101735.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241030_101948.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_prediction_plot_20241030_102217.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Sophisticated_Attention_future_prediction.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Sophisticated_Attention_metrics_20241030_103033.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Simple_Sophisticated_Attention_prediction_plot_20241030_103033.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Sophisticated_Attention_future_prediction.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Sophisticated_Attention_metrics_20241029_095929.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/Sophisticated_Attention_prediction_plot_20241029_095929.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/lstm_metrics_20241029_091643.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_20241029_095912.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_20241030_102859.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_20241030_103514.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_20241030_104020.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_20241030_113848.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_params_20241030_102859.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_params_20241030_103514.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_params_20241030_103825.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Attention_params_20241030_113243.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_20241029_102529.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_20241029_104748.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_20241029_134131.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_20241029_135417.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_20241030_101639.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_20241030_102217.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_095855.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100026.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100116.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100211.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100247.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100313.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100338.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100408.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100605.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100700.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_100845.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_102257.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_102529.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_102557.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_102628.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_102930.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_104106.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_104748.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_133126.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_134131.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_135417.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_151149.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_153815.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241029_160729.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241030_101501.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241030_101639.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241030_101735.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241030_101948.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_LSTM_params_20241030_102217.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Sophisticated_Attention_20241030_103033.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Simple_Sophisticated_Attention_params_20241030_103033.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Sophisticated_Attention_20241029_095929.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/Sophisticated_Attention_params_20241029_095929.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241028_182811.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241028_183413.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241028_184551.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241028_184659.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241029_091032.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241029_091127.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241029_091200.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_20241029_091237.h5" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241028_182811.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241028_183413.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241028_184551.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241028_184659.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241029_091032.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241029_091127.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241029_091200.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/models/transformer_params_20241029_091237.pkl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_future_prediction.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241028_182811.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241028_183413.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241028_184551.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241028_184659.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241029_091032.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241029_091127.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241029_091200.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_metrics_20241029_091237.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241028_182811.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241028_183413.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241028_184551.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241028_184659.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241029_091032.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241029_091127.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241029_091200.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/results/transformer_prediction_plot_20241029_091237.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/TimeSeriesPrediction.py" beforeDir="false" afterPath="$PROJECT_DIR$/TimeSeriesPrediction.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_xauusd_2.csv" beforeDir="false" afterPath="$PROJECT_DIR$/data_xauusd_2.csv" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager" show_ignored="true">
+    <option name="groupingKeys">
+      <option value="directory" />
+    </option>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -271,7 +122,39 @@
       <option name="project" value="LOCAL" />
       <updated>1730278990334</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
+      <option name="closed" value="true" />
+      <created>1730279016722</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1730279016722</updated>
+    </task>
+    <task id="LOCAL-00004" summary="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
+      <option name="closed" value="true" />
+      <created>1730279035137</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1730279035137</updated>
+    </task>
+    <task id="LOCAL-00005" summary="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
+      <option name="closed" value="true" />
+      <created>1730279040872</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1730279040872</updated>
+    </task>
+    <task id="LOCAL-00006" summary="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
+      <option name="closed" value="true" />
+      <created>1730279165636</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1730279165636</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -288,13 +171,18 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/TimeSeriesPrediction.py</url>
-          <line>265</line>
+          <line>262</line>
           <option name="timeStamp" value="11" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/TimeSeriesPrediction.py</url>
-          <line>233</line>
+          <line>230</line>
           <option name="timeStamp" value="12" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/TimeSeriesPrediction.py</url>
+          <line>335</line>
+          <option name="timeStamp" value="16" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

@@ -20,6 +20,8 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
 import pickle
 
+from sklearn.ensemble import IsolationForest
+
 # Set random seed for reproducibility
 np.random.seed(42)
 tf.random.set_seed(42)
@@ -45,11 +47,6 @@ def impute_missing_values(data, method='mean', n_neighbors=5):
         imputer = KNNImputer(n_neighbors=n_neighbors)
         data = imputer.fit_transform(data)
     return data
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.ensemble import IsolationForest
 
 
 def plot_outliers(data, mask, method):
@@ -334,48 +331,58 @@ def plot_training_history(history, model_name):
     plt.legend()
     plt.show()
 
+
 def future_prediction(model, data, original_data, params, scaler=None):
     predictions = []
     window_size = params['window_size']
     num_features = data.shape[1]
     input_seq = data[-window_size:, :]
-    last_value = None
+
+    if params.get('use_difference', False):
+        # Store the last actual value from original data for de-differencing
+        last_actual_value = original_data[-1, :]
+
     for _ in range(params['horizon']):
         features_list = []
         for feature_idx in range(num_features):
             window_feature = input_seq[:, feature_idx].reshape(-1, 1)
             features = extract_features(window_feature, params)
             features_list.append(features)
+
         combined_features = np.concatenate(features_list)
         input_seq_reshaped = combined_features.reshape((1, -1))
         pred = model.predict(input_seq_reshaped)
-        # De-normalize prediction if scaler is provided
-        if scaler is not None:
-            pred = scaler.inverse_transform(pred)
+
         if params.get('use_difference', False):
-            # De-difference the prediction
-            if last_value is None:
-                # Get the last value from the input sequence
-                last_value = original_data[-1, :]
-                if scaler is not None:
-                    # last_value = scaler.inverse_transform(last_value.reshape(1, -1))
-                    last_value = scaler.transform(last_value.reshape(1, -1))
-            pred_value = last_value + pred
-            predictions.append(pred_value[0])
-            # Update last_value
-            last_value = pred_value
-            # Normalize the new value and update input sequence
             if scaler is not None:
-                new_input = scaler.transform(pred_value)
+                # De-normalize the predicted difference
+                pred_denorm = scaler.inverse_transform(pred)
+                # Add to the last actual value to get the real prediction
+                actual_pred = last_actual_value + pred_denorm
+                # Update last actual value for next iteration
+                last_actual_value = actual_pred
+                # Normalize back for the sliding window
+                new_input = scaler.transform(actual_pred)
             else:
-                new_input = pred_value
-            input_seq = np.vstack((input_seq[1:], new_input))
+                # If no scaler, just add the predicted difference
+                actual_pred = last_actual_value + pred
+                last_actual_value = actual_pred
+                new_input = actual_pred
+
+            predictions.append(actual_pred[0])
         else:
-            predictions.append(pred[0])
-            # Update input sequence
-            input_seq = np.vstack((input_seq[1:], pred))
-    predictions = np.array(predictions)
-    return predictions
+            # For non-differenced data
+            if scaler is not None:
+                pred_denorm = scaler.inverse_transform(pred)
+                predictions.append(pred_denorm[0])
+                new_input = pred  # Keep normalized for sliding window
+            else:
+                predictions.append(pred[0])
+                new_input = pred
+
+        input_seq = np.vstack((input_seq[1:], new_input))
+
+    return np.array(predictions)
 
 def future_prediction_with_new_data(model_path, params_path, data_path):
     # Load model and parameters
@@ -438,9 +445,9 @@ def plot_train_test_split(data, train_indices, test_indices):
 def main():
     # Parameters (can be set as needed)
     params = {
-        'file_path': 'data_xauusd.csv',  # Path to your main training data CSV file
-        'window_size': 70,
-        'normalization_method': 'standard',  # Options: 'minmax', 'standard', 'robust', None
+        'file_path': 'data_xauusd_2.csv',  # Path to your main training data CSV file
+        'window_size': 30,
+        'normalization_method': 'minmax',  # Options: 'minmax', 'standard', 'robust', None
         'imputation_method': 'knn',  # Options: 'mean', 'median', 'knn', None
         'imputation_neighbors': 5,  # Number of neighbors for KNN imputation
         'outlier_removal': False,
@@ -449,8 +456,8 @@ def main():
         'time_domain_features': True,
         'frequency_domain_features': True,
         'use_original': True,  # Whether to use the original data as features
-        'use_difference': True,  # Whether to use the difference of data instead of original data
-        'epochs': 250,
+        'use_difference': False,  # Whether to use the difference of data instead of original data
+        'epochs': 20,
         'batch_size': 64,
         'patience': 30,
         'horizon': 10,
@@ -523,11 +530,12 @@ def main():
         raise ValueError("Invalid split method specified.")
 
     plot_train_test_split(y, train_indices, test_indices)
+    # 'Simple_LSTM': build_lstm_model,
     # 'Simple_Attention': build_simple_attention_model,
     # 'Simple_Sophisticated_Attention': build_sophisticated_attention_model,
 
     models = {
-        'Simple_Attention': build_simple_attention_model,
+        'Simple_LSTM': build_lstm_model,
     }
 
     trained_models = {}
