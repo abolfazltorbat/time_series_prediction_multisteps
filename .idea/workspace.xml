@@ -8,6 +8,7 @@
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/TimeSeriesPrediction.py" beforeDir="false" afterPath="$PROJECT_DIR$/TimeSeriesPrediction.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data_xauusd_2.csv" beforeDir="false" afterPath="$PROJECT_DIR$/data_xauusd_2.csv" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/results/Simple_LSTM_future_prediction.png" beforeDir="false" afterPath="$PROJECT_DIR$/results/Simple_LSTM_future_prediction.png" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -31,14 +32,14 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.TimeSeriesPrediction.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.TimeSeriesPrediction.executor": "Run",
+    "Python.main.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "master"
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected="Python.TimeSeriesPrediction">
     <configuration name="TimeSeriesPrediction" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="pythonProject1" />
@@ -154,7 +155,23 @@
       <option name="project" value="LOCAL" />
       <updated>1730279165636</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
+      <option name="closed" value="true" />
+      <created>1730360070423</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1730360070423</updated>
+    </task>
+    <task id="LOCAL-00008" summary="This code is designed for time series prediction, accommodating both univariate and multivariate data. The process begins with essential preprocessing steps, including normalization, outlier removal, the application of first-order differentials, and feature extraction in both the time and frequency domains.&#10;&#10;Subsequently, the model employs a hybrid LSTM-attention mechanism as the deep learning architecture for predictions. In the evaluation section, several metrics are utilized to assess the model's performance from various perspectives. Finally, the code enables future forecasting, allowing for predictions based on existing data or new datasets.">
+      <option name="closed" value="true" />
+      <created>1730360095270</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1730360095270</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -171,18 +188,13 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/TimeSeriesPrediction.py</url>
-          <line>262</line>
-          <option name="timeStamp" value="11" />
+          <line>437</line>
+          <option name="timeStamp" value="19" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/TimeSeriesPrediction.py</url>
-          <line>230</line>
-          <option name="timeStamp" value="12" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/TimeSeriesPrediction.py</url>
-          <line>335</line>
-          <option name="timeStamp" value="16" />
+          <line>68</line>
+          <option name="timeStamp" value="20" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

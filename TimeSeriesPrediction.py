@@ -3,8 +3,12 @@ import numpy as np
 import os
 import datetime
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')
 from scipy.fft import fft
 from scipy.stats import skew, kurtosis, iqr, entropy
+from tqdm import tqdm
+
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
@@ -12,8 +16,12 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 from sklearn.impute import KNNImputer
 from sklearn.ensemble import IsolationForest
 import tensorflow as tf
+
+
+
+
 from tensorflow.keras.models import Sequential, Model, load_model
-from tensorflow.keras.layers import BatchNormalization, Dense, LSTM, Dropout, Input, Flatten
+from tensorflow.keras.layers import BatchNormalization, Dense, LSTM, Dropout, Input, Flatten, Conv1D, LayerNormalization, Add
 from tensorflow.keras.layers import Attention, LayerNormalization, MultiHeadAttention, Reshape
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam
@@ -58,7 +66,7 @@ def plot_outliers(data, mask, method):
     plt.xlabel('Index')
     plt.ylabel('Value')
     plt.legend()
-    plt.show()
+    plt.show(block=True)
 
 
 def remove_outliers(data, method='zscore', z_thresh=3.0, is_plot=True):
@@ -110,7 +118,8 @@ def compute_difference(data,is_plot = True):
         axs[1].set_xlabel('Index')
         # Show the plot
         plt.tight_layout()
-        plt.show()
+        plt.show(block=True)
+ 
 
     return diff_data
 
@@ -182,7 +191,7 @@ def create_windows(data, params):
     initial_values = []
     window_size = params['window_size']
     num_features = data.shape[1]
-    for i in range(len(data) - window_size):
+    for i in tqdm(range(len(data) - window_size), desc="Processing windows"):
         window = data[i:(i + window_size), :]
         if params.get('use_difference', False):
             # When using differences, target is the difference between next value and last value in the window
@@ -227,23 +236,39 @@ def build_simple_attention_model(input_shape,target_shape, units=64, dropout_rat
     model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
     return model
 
-def build_sophisticated_attention_model(input_shape,target_shape, num_heads=4, dff=128, dropout_rate=0.1):
+
+
+
+def build_hybrid_cnn_attention_model(input_shape, target_shape, num_heads=4, dff=128, cnn_filters=64, kernel_size=3,
+                                     dropout_rate=0.1):
     inputs = Input(shape=(input_shape[0], 1))
-    # Multi-Head Attention
-    attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=1)(inputs, inputs)
+
+    # Convolutional Block
+    cnn_output = Conv1D(filters=cnn_filters, kernel_size=kernel_size, activation='relu', padding='same')(inputs)
+    cnn_output = Conv1D(filters=cnn_filters, kernel_size=kernel_size, activation='relu', padding='same')(cnn_output)
+    cnn_output = Dropout(dropout_rate)(cnn_output)
+
+    # Multi-Head Attention Block
+    attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=cnn_filters)(cnn_output, cnn_output)
     attn_output = Dropout(dropout_rate)(attn_output)
-    out1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output)
+    attn_output = LayerNormalization(epsilon=1e-6)(Add()([cnn_output, attn_output]))  # Skip connection
+
     # Feed Forward Network
-    ffn_output = Dense(dff, activation='relu')(out1)
-    ffn_output = Dense(1)(ffn_output)
+    ffn_output = Dense(dff, activation='relu')(attn_output)
+    ffn_output = Dense(cnn_filters)(ffn_output)
     ffn_output = Dropout(dropout_rate)(ffn_output)
-    out2 = LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
+    ffn_output = LayerNormalization(epsilon=1e-6)(Add()([attn_output, ffn_output]))  # Skip connection
+
     # Flatten and Output
-    flat = Flatten()(out2)
+    flat = Flatten()(ffn_output)
     outputs = Dense(target_shape[-1])(flat)
+
+    # Model Compilation
     model = Model(inputs=inputs, outputs=outputs)
     model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
+
     return model
+
 
 def evaluate_model(model, X_train, y_train, X_test, y_test, model_name, params, scaler=None, initial_values_train=None, initial_values_test=None):
     y_train_pred = model.predict(X_train)
@@ -316,7 +341,7 @@ def evaluate_model(model, X_train, y_train, X_test, y_test, model_name, params, 
     plt.ylabel('Value')
     plt.legend()
     plt.savefig(os.path.join(results_dir, f"{model_name}_prediction_plot_{date_time}.png"))
-    plt.show()
+    plt.show(block=True)
 
     return results, model_file, params_file
 
@@ -329,7 +354,7 @@ def plot_training_history(history, model_name):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.show()
+    plt.show(block=True)
 
 
 def future_prediction(model, data, original_data, params, scaler=None):
@@ -353,36 +378,73 @@ def future_prediction(model, data, original_data, params, scaler=None):
         input_seq_reshaped = combined_features.reshape((1, -1))
         pred = model.predict(input_seq_reshaped)
 
-        if params.get('use_difference', False):
-            if scaler is not None:
-                # De-normalize the predicted difference
-                pred_denorm = scaler.inverse_transform(pred)
-                # Add to the last actual value to get the real prediction
-                actual_pred = last_actual_value + pred_denorm
-                # Update last actual value for next iteration
-                last_actual_value = actual_pred
-                # Normalize back for the sliding window
-                new_input = scaler.transform(actual_pred)
-            else:
-                # If no scaler, just add the predicted difference
-                actual_pred = last_actual_value + pred
-                last_actual_value = actual_pred
-                new_input = actual_pred
+        # if params.get('use_difference', False):
 
-            predictions.append(actual_pred[0])
+            # if scaler is not None:
+            #     # De-normalize the predicted difference
+            #     pred_denorm = scaler.inverse_transform(pred)
+            #     # Add to the last actual value to get the real prediction
+            #     actual_pred = last_actual_value + pred_denorm
+            #     # Update last actual value for next iteration
+            #     last_actual_value = actual_pred
+            #     # Normalize back for the sliding window
+            #     new_input = scaler.transform(actual_pred)
+            # else:
+            #     # If no scaler, just add the predicted difference
+            #     actual_pred = last_actual_value + pred
+            #     last_actual_value = actual_pred
+            #     new_input = actual_pred
+            #
+            # predictions.append(actual_pred[0])
+        # else:
+        # For non-differenced data
+        if scaler is not None:
+            pred_denorm = scaler.inverse_transform(pred)
+            predictions.append(pred_denorm[0])
+            new_input = pred  # Keep normalized for sliding window
         else:
-            # For non-differenced data
-            if scaler is not None:
-                pred_denorm = scaler.inverse_transform(pred)
-                predictions.append(pred_denorm[0])
-                new_input = pred  # Keep normalized for sliding window
-            else:
-                predictions.append(pred[0])
-                new_input = pred
+            predictions.append(pred[0])
+            new_input = pred
 
         input_seq = np.vstack((input_seq[1:], new_input))
 
-    return np.array(predictions)
+
+    predictions = np.array(predictions)
+
+    # new ------------
+    if params.get('use_difference', False):
+        predictions = de_difference(predictions, last_actual_value)
+     # if scaler is not None:
+    #     # De-normalize the predicted difference
+    #     pred_denorm = scaler.inverse_transform(pred)
+    #     # Add to the last actual value to get the real prediction
+    #     actual_pred = last_actual_value + pred_denorm
+    #     # Update last actual value for next iteration
+    #     last_actual_value = actual_pred
+    #     # Normalize back for the sliding window
+    #     new_input = scaler.transform(actual_pred)
+    # else:
+    #     # If no scaler, just add the predicted difference
+    #     actual_pred = last_actual_value + pred
+    #     last_actual_value = actual_pred
+    #     new_input = actual_pred
+    #
+    # predictions.append(actual_pred[0])
+
+    # ----------------
+
+
+    # ----- plot the future forecast
+    plt.figure(figsize=(12, 6))
+    plt.plot(range(len(original_data)), original_data, label='Historical Data')
+    plt.plot(range(len(original_data), len(original_data) + len(predictions)), predictions, label='Future Predictions')
+    plt.title(f' - Future Predictions')
+    plt.xlabel('Time Steps')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.savefig(os.path.join('results', f"_future_prediction.png"))
+    plt.show(block=True)
+    return predictions
 
 def future_prediction_with_new_data(model_path, params_path, data_path):
     # Load model and parameters
@@ -440,14 +502,14 @@ def plot_train_test_split(data, train_indices, test_indices):
     plt.xlabel('Time Steps')
     plt.ylabel('Value')
     plt.legend()
-    plt.show()
+    plt.show(block=True)
 
 def main():
     # Parameters (can be set as needed)
     params = {
         'file_path': 'data_xauusd_2.csv',  # Path to your main training data CSV file
-        'window_size': 30,
-        'normalization_method': 'minmax',  # Options: 'minmax', 'standard', 'robust', None
+        'window_size': 600,
+        'normalization_method': 'None',  # Options: 'minmax', 'standard', 'robust', None
         'imputation_method': 'knn',  # Options: 'mean', 'median', 'knn', None
         'imputation_neighbors': 5,  # Number of neighbors for KNN imputation
         'outlier_removal': False,
@@ -456,11 +518,11 @@ def main():
         'time_domain_features': True,
         'frequency_domain_features': True,
         'use_original': True,  # Whether to use the original data as features
-        'use_difference': False,  # Whether to use the difference of data instead of original data
-        'epochs': 20,
-        'batch_size': 64,
+        'use_difference': True,  # Whether to use the difference of data instead of original data.first-order differencing
+        'epochs': 10,
+        'batch_size': 32,
         'patience': 30,
-        'horizon': 10,
+        'horizon': 45,
         'retrain': True,  # Set to True to retrain saved model
         'model_path': None,  # Path to saved model (if retrain is False)
         'params_path': None,  # Path to saved parameters (if retrain is False)
@@ -535,7 +597,7 @@ def main():
     # 'Simple_Sophisticated_Attention': build_sophisticated_attention_model,
 
     models = {
-        'Simple_LSTM': build_lstm_model,
+        'Simple_Sophisticated_Attention': build_hybrid_cnn_attention_model,
     }
 
     trained_models = {}
@@ -567,23 +629,7 @@ def main():
         # Future prediction using the same data
         predictions = future_prediction(model, data, original_data, params, scaler)
 
-        # # De-normalize predictions if scaler is provided
-        # if scaler is not None:
-        #     pass  # Predictions are already de-normalized in future_prediction
-        #     original_data = scaler.inverse_transform(data)
-        # else:
-        #     original_data = data
 
-        # Plot future predictions
-        plt.figure(figsize=(12,6))
-        plt.plot(range(len(original_data)), original_data, label='Historical Data')
-        plt.plot(range(len(original_data), len(original_data)+len(predictions)), predictions, label='Future Predictions')
-        plt.title(f'{model_name} - Future Predictions')
-        plt.xlabel('Time Steps')
-        plt.ylabel('Value')
-        plt.legend()
-        plt.savefig(os.path.join('results', f"{model_name}_future_prediction.png"))
-        plt.show()
 
     return
     # Future prediction with new data
