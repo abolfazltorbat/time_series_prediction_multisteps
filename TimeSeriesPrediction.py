@@ -16,10 +16,7 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 from sklearn.impute import KNNImputer
 from sklearn.ensemble import IsolationForest
 import tensorflow as tf
-
-
-
-
+from tensorflow.keras.utils import plot_model
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.layers import BatchNormalization, Dense, LSTM, Dropout, Input, Flatten, Conv1D, LayerNormalization, Add
 from tensorflow.keras.layers import Attention, LayerNormalization, MultiHeadAttention, Reshape
@@ -56,17 +53,8 @@ def impute_missing_values(data, method='mean', n_neighbors=5):
         data = imputer.fit_transform(data)
     return data
 
-
 def plot_outliers(data, mask, method):
-    """Helper function to plot original data and detected outliers."""
-    plt.figure(figsize=(10, 6))
-    plt.scatter(np.arange(len(data)), data, color='blue', label='Original Data')
-    plt.scatter(np.arange(len(data))[~mask], data[~mask], color='red', label='Outliers')
-    plt.title(f'Outlier Detection using {method}')
-    plt.xlabel('Index')
-    plt.ylabel('Value')
-    plt.legend()
-    plt.show(block=True)
+    pass
 
 
 def remove_outliers(data, method='zscore', z_thresh=3.0, is_plot=True):
@@ -105,21 +93,7 @@ def compute_difference(data,is_plot = True):
     diff_data = np.diff(data, axis=0, prepend=data[0:1])
 
     if is_plot:
-        fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-        # Plot original data
-        axs[0].plot(data, label='Original Data', color='blue')
-        axs[0].set_title('Original Data')
-        axs[0].legend()
-        # Plot differences
-        axs[1].plot(diff_data, label='Differences', color='orange')
-        axs[1].set_title('Differences')
-        axs[1].legend()
-        # Set common x-axis label
-        axs[1].set_xlabel('Index')
-        # Show the plot
-        plt.tight_layout()
-        plt.show(block=True)
- 
+        pass
 
     return diff_data
 
@@ -152,7 +126,6 @@ def extract_time_domain_features(window):
     ))
     return features
 
-
 def extract_frequency_domain_features(window, roll_off=0.85):
     # FFT transformation and magnitudes
     fft_values = fft(window, axis=0)
@@ -170,7 +143,6 @@ def extract_frequency_domain_features(window, roll_off=0.85):
     # Combine frequency features
     freq_features = np.concatenate((mean_fft, std_fft, dominant_freq, spectral_entropy, roll_off_freq))
     return freq_features
-
 
 def extract_features(window, params):
     features_list = []
@@ -217,30 +189,8 @@ def create_windows(data, params):
     else:
         return X, y
 
-def build_lstm_model(input_shape,target_shape, units=64, dropout_rate=0.2, l2_reg=0.001):
-    model = Sequential()
-    model.add(Reshape((input_shape[0], 1), input_shape=input_shape))
-    model.add(LSTM(units, activation='relu', kernel_regularizer=regularizers.l2(l2_reg)))
-    model.add(Dropout(dropout_rate))
-    model.add(Dense(target_shape[-1]))
-    model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
-    return model
-
-def build_simple_attention_model(input_shape,target_shape, units=64, dropout_rate=0.2, l2_reg=0.001):
-    inputs = Input(shape=(input_shape[0], 1))
-    lstm_out = LSTM(units, return_sequences=True)(inputs)
-    attention = Attention()([lstm_out, lstm_out])
-    attention_flat = Flatten()(attention)
-    outputs = Dense(target_shape[-1])(attention_flat)
-    model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
-    return model
-
-
-
-
 def build_hybrid_cnn_attention_model(input_shape, target_shape, num_heads=4, dff=128, cnn_filters=64, kernel_size=3,
-                                     dropout_rate=0.1):
+                                     dropout_rate=0.01):
     inputs = Input(shape=(input_shape[0], 1))
 
     # Convolutional Block
@@ -268,7 +218,6 @@ def build_hybrid_cnn_attention_model(input_shape, target_shape, num_heads=4, dff
     model.compile(optimizer=Adam(learning_rate=0.001), loss='mse')
 
     return model
-
 
 def evaluate_model(model, X_train, y_train, X_test, y_test, model_name, params, scaler=None, initial_values_train=None, initial_values_test=None):
     y_train_pred = model.predict(X_train)
@@ -378,26 +327,6 @@ def future_prediction(model, data, original_data, params, scaler=None):
         input_seq_reshaped = combined_features.reshape((1, -1))
         pred = model.predict(input_seq_reshaped)
 
-        # if params.get('use_difference', False):
-
-            # if scaler is not None:
-            #     # De-normalize the predicted difference
-            #     pred_denorm = scaler.inverse_transform(pred)
-            #     # Add to the last actual value to get the real prediction
-            #     actual_pred = last_actual_value + pred_denorm
-            #     # Update last actual value for next iteration
-            #     last_actual_value = actual_pred
-            #     # Normalize back for the sliding window
-            #     new_input = scaler.transform(actual_pred)
-            # else:
-            #     # If no scaler, just add the predicted difference
-            #     actual_pred = last_actual_value + pred
-            #     last_actual_value = actual_pred
-            #     new_input = actual_pred
-            #
-            # predictions.append(actual_pred[0])
-        # else:
-        # For non-differenced data
         if scaler is not None:
             pred_denorm = scaler.inverse_transform(pred)
             predictions.append(pred_denorm[0])
@@ -414,25 +343,6 @@ def future_prediction(model, data, original_data, params, scaler=None):
     # new ------------
     if params.get('use_difference', False):
         predictions = de_difference(predictions, last_actual_value)
-     # if scaler is not None:
-    #     # De-normalize the predicted difference
-    #     pred_denorm = scaler.inverse_transform(pred)
-    #     # Add to the last actual value to get the real prediction
-    #     actual_pred = last_actual_value + pred_denorm
-    #     # Update last actual value for next iteration
-    #     last_actual_value = actual_pred
-    #     # Normalize back for the sliding window
-    #     new_input = scaler.transform(actual_pred)
-    # else:
-    #     # If no scaler, just add the predicted difference
-    #     actual_pred = last_actual_value + pred
-    #     last_actual_value = actual_pred
-    #     new_input = actual_pred
-    #
-    # predictions.append(actual_pred[0])
-
-    # ----------------
-
 
     # ----- plot the future forecast
     plt.figure(figsize=(12, 6))
@@ -495,20 +405,13 @@ def future_prediction_with_new_data(model_path, params_path, data_path):
     return predictions
 
 def plot_train_test_split(data, train_indices, test_indices):
-    plt.figure(figsize=(12,6))
-    plt.plot(train_indices, data[train_indices].flatten(), label='Train Data', color='blue')
-    plt.plot(test_indices, data[test_indices].flatten(), label='Test Data', color='orange')
-    plt.title('Train-Test Split')
-    plt.xlabel('Time Steps')
-    plt.ylabel('Value')
-    plt.legend()
-    plt.show(block=True)
+    pass
 
 def main():
     # Parameters (can be set as needed)
     params = {
-        'file_path': 'data_xauusd_2.csv',  # Path to your main training data CSV file
-        'window_size': 600,
+        'file_path': 'data_xauusd.csv',  # Path to your main training data CSV file
+        'window_size': 1000,
         'normalization_method': 'None',  # Options: 'minmax', 'standard', 'robust', None
         'imputation_method': 'knn',  # Options: 'mean', 'median', 'knn', None
         'imputation_neighbors': 5,  # Number of neighbors for KNN imputation
@@ -518,8 +421,8 @@ def main():
         'time_domain_features': True,
         'frequency_domain_features': True,
         'use_original': True,  # Whether to use the original data as features
-        'use_difference': True,  # Whether to use the difference of data instead of original data.first-order differencing
-        'epochs': 10,
+        'use_difference': False,  # Whether to use the difference of data instead of original data.first-order differencing
+        'epochs': 15,
         'batch_size': 32,
         'patience': 30,
         'horizon': 45,
@@ -592,9 +495,6 @@ def main():
         raise ValueError("Invalid split method specified.")
 
     plot_train_test_split(y, train_indices, test_indices)
-    # 'Simple_LSTM': build_lstm_model,
-    # 'Simple_Attention': build_simple_attention_model,
-    # 'Simple_Sophisticated_Attention': build_sophisticated_attention_model,
 
     models = {
         'Simple_Sophisticated_Attention': build_hybrid_cnn_attention_model,
@@ -604,6 +504,8 @@ def main():
     for model_name, model_builder in models.items():
         print(f"Training {model_name}...")
         model = model_builder(input_shape,target_shape)
+        plot_model(model, to_file=f"model_architecture_{model_name}.png", show_shapes=True, show_layer_names=True)
+
         # Callbacks
         early_stopping = EarlyStopping(monitor='val_loss', patience=params['patience'], restore_best_weights=True)
         reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5)
@@ -628,8 +530,6 @@ def main():
 
         # Future prediction using the same data
         predictions = future_prediction(model, data, original_data, params, scaler)
-
-
 
     return
     # Future prediction with new data
