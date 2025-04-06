@@ -4,8 +4,12 @@ import pickle
 import pandas as pd
 import numpy as np
 import logging
+from datetime import datetime, timedelta
+
+# from scipy.special import params
 from sklearn.ensemble import IsolationForest
 import matplotlib.pyplot as plt
+import mpld3
 from sklearn.impute import KNNImputer
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 from scipy.stats import skew, kurtosis, iqr, entropy
@@ -13,21 +17,36 @@ from scipy.fft import rfft
 from joblib import Parallel, delayed
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
+import logging
+from glob import glob
+from pathlib import Path
 
 def check_for_saved_params(params, logger):
-    params_path = params.get('params_path', None)
-    if params_path and os.path.exists(params_path):
+    if not params['retrain']:
+        return params
+    base_dir = params.get('params_path', None)
+    params_path = str(Path(base_dir).glob("*_params.pkl").__next__())
+
+    if params['retrain'] and params_path and os.path.exists(params_path):
         logger.info(f"Loading parameters from {params_path}")
         with open(params_path, 'rb') as f:
             loaded_params = pickle.load(f)
 
-        # Overwrite some critical params if they are defined in the current run
+        # Overwrite some critical params if they are defined in the current run multi_steps_recursive
         if params.get('model_path', None) is not None:
             loaded_params['model_path'] = params['model_path']
         if params.get('file_path', None) is not None:
             loaded_params['file_path'] = params['file_path']
+        if params.get('prediction_approach', None) is not None:
+            loaded_params['prediction_approach'] = params['prediction_approach']
+        if params.get('multi_steps_recursive', None) is not None:
+            loaded_params['multi_steps_recursive'] = params['multi_steps_recursive']
         if params.get('epochs', None) is not None:
             loaded_params['epochs'] = params['epochs']
+        if params.get('use_parallel', None) is not None:
+            loaded_params['use_parallel'] = params['epochs']
+        if params.get('retrain', None) is not None:
+            loaded_params['retrain'] = params['retrain']
         if params.get('batch_size', None) is not None:
             loaded_params['batch_size'] = params['batch_size']
         if params.get('patience', None) is not None:
@@ -69,12 +88,13 @@ def preprocess_data(params, logger):
         data = compute_difference(data, params=params)
     if params['outlier_removal']:
         data = remove_outliers(data, method=params['outlier_method'], params=params)
-    if params['normalization_method']:
+    if params['normalization_method'] and params['normalization_type']=='all':
         data, scaler = normalize_data(data, method=params['normalization_method'], logger=logger)
         params['scaler'] = scaler
     else:
         scaler = None
         params['scaler'] = None
+
     if len(data.shape) == 1 or data.shape[1] == 1:
         data = data.reshape(-1, 1)
     if params.get('use_difference', False):
@@ -88,11 +108,58 @@ def load_csv_data(file_path, logger):
     """Load data from a CSV file and handle missing values."""
     logger.info(f"Loading CSV data from {file_path}")
     data = pd.read_csv(file_path).values
+
     zero_nan_mask = np.isnan(data) | (data == 0)
     if np.any(zero_nan_mask):
         logger.info("Data contains zeros or NaNs. Handling them appropriately.")
         data = impute_missing_values(data, method='mean', logger=logger)
     return data
+
+def progressive_downsample(data, rate=15, is_plot=False):
+    """Progressive downsampling with exponential weighting"""
+    # Ensure input is 2D array of shape (N,1)
+    data = np.array(data).reshape(-1, 1)  # Changed from flatten()
+    section_size = len(data) // rate
+    result = []
+
+    for i, r in enumerate(range(rate, 0, -1)):
+        section = data[i * section_size:min((i + 1) * section_size, len(data))].flatten()  # Flatten only for processing
+        if r > 1:
+            valid_len = (len(section) // r) * r
+            if valid_len > 0:
+                weights = np.exp(np.linspace(0, 1, r))
+                # Ensure we get scalar values from np.average
+                avg = [float(np.average(g, weights=weights))
+                       for g in section[:valid_len].reshape(-1, r)]
+                if len(section) > valid_len:
+                    avg.append(float(np.mean(section[valid_len:])))
+                result.extend(avg)
+            else:
+                result.extend(section.tolist())
+        else:
+            result.extend(section.tolist())
+
+    # Convert result to numpy array and reshape to (N,1)
+    result = np.array(result).reshape(-1, 1)  # Changed to reshape(-1,1)
+
+    if is_plot:
+        # Create figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+
+        # Plot original vs downsampled
+        ax1.plot(data.flatten(), 'b-', label='Original', alpha=0.7)  # Flatten only for plotting
+        ax1.set_title('Original')
+        ax1.grid(True)
+
+        # Plot absolute error
+        ax2.plot(result.flatten(), 'r-', label='Downsampled', linewidth=2)  # Flatten only for plotting
+        ax2.set_title('Downsampled')
+        ax2.grid(True)
+
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+    return result
 
 def remove_outliers(data, method='zscore', z_thresh=3.0, is_plot=False, params=None):
     """Remove outliers from the data using the specified method."""
@@ -111,6 +178,7 @@ def remove_outliers(data, method='zscore', z_thresh=3.0, is_plot=False, params=N
     if False and is_plot:
         plot_outliers(data, mask, method, params)
     return filtered_data
+
 def plot_outliers(data, mask, method, params):
     """Plot outliers detected in the data."""
     logger = logging.getLogger('TimeSeriesModel')
@@ -123,8 +191,18 @@ def plot_outliers(data, mask, method, params):
     plt.ylabel('Value')
     plt.legend()
     plt.grid(True)
-    save_path = os.path.join(params['results_save_dir'], f"outliers_{method}.svg")
-    plt.savefig(save_path, format='svg')
+
+    # Save as SVG
+    save_path_svg = os.path.join(params['results_save_dir'], f"outliers_{method}.svg")
+    plt.savefig(save_path_svg, format='svg')
+    logger.info(f"Static plot saved as SVG: {save_path_svg}")
+
+    # Save as interactive HTML
+    import mpld3
+    save_path_html = os.path.join(params['results_save_dir'], f"outliers_{method}.html")
+    mpld3.save_html(plt.gcf(), save_path_html)
+    logger.info(f"Interactive plot saved as HTML: {save_path_html}")
+
     if params['is_plot']:
         plt.show()
     plt.close()
@@ -184,7 +262,7 @@ def compute_difference(data, is_plot=False, params=None):
 
         # Create figure and subplots with higher DPI
         fig, axs = plt.subplots(2, 1, figsize=(15, 8),
-                                sharex=True, dpi=100,
+                                sharex=True, dpi=params['dpi'],
                                 gridspec_kw={'hspace': 0.3})
 
         # Plot original data
@@ -252,15 +330,25 @@ def compute_difference(data, is_plot=False, params=None):
         plt.tight_layout(rect=[0.05, 0.05, 0.95, 0.92])
 
         # Save the figure with high quality
-        save_path = os.path.join(params['results_save_dir'], "difference_plot.png")
-        plt.savefig(save_path,
+        save_path_png = os.path.join(params['results_save_dir'], "difference_plot.png")
+        plt.savefig(save_path_png,
                     format='png',
                     bbox_inches='tight',
                     pad_inches=0.1,
                     metadata={'Creator': 'Difference Plot'})
 
+        logger.info(f"Static plot saved as PNG: {save_path_png}")
+
+        # Save the figure as an interactive HTML file
+        import mpld3
+        save_path_html = os.path.join(params['results_save_dir'], "difference_plot.html")
+        mpld3.save_html(fig, save_path_html)
+        logger.info(f"Interactive plot saved as HTML: {save_path_html}")
+
+        # Optionally display the figure
         if params['is_plot']:
             plt.show()
+
         plt.close()
 
     return diff_data
@@ -326,7 +414,7 @@ def extract_time_domain_features(window):
 
     # Ensure all features have the same dimensions (1D) before concatenation
     feature_list = [
-        last_data.reshape(-1),  # Convert to 1D
+        # last_data.reshape(-1),  # Convert to 1D
         stats['min'].reshape(-1),
         stats['max'].reshape(-1),
         stats['std'].reshape(-1),
@@ -352,7 +440,6 @@ def extract_time_domain_features(window):
     # Concatenate all features into a single array
     features = np.concatenate(feature_list)
     return features
-
 def spectral_flatness(half_spectrum):
     geometric_mean = np.exp(np.mean(np.log(half_spectrum + 1e-12), axis=0))
     arithmetic_mean = np.mean(half_spectrum, axis=0)
@@ -424,68 +511,206 @@ def extract_features(window, params):
     window = window.reshape(-1, 1)
     if params['time_domain_features']:
         time_features = extract_time_domain_features(window)
+        time_features,  tmp = normalize_data(time_features.reshape(-1,1), method=params['normalization_method'], logger=logging)
+        time_features=time_features.reshape(-1)
+
         features_list.append(time_features)
+
     if params['frequency_domain_features']:
         freq_features = extract_frequency_domain_features(window)
+        freq_features,  tmp = normalize_data(freq_features.reshape(-1,1), method=params['normalization_method'], logger=logging)
+        freq_features=freq_features.reshape(-1)
+
         features_list.append(freq_features)
+
     if params['wavelet_features']:
         wavelet_features = extract_wavelet_features(window)
+
+        wavelet_features,  tmp = normalize_data(wavelet_features.reshape(-1,1), method=params['normalization_method'], logger=logging)
+        wavelet_features=wavelet_features.reshape(-1)
+
         features_list.append(wavelet_features)
     if params['use_original']:
         features_list.append(window.flatten())
     features = np.concatenate(features_list)
+
+    # ----------------------------------------------------------------
+    #  Minimal addition: build a feature-name dictionary in the same
+    #  order the features were concatenated, and attach to params.
+    # ----------------------------------------------------------------
+    if 'feature_names' not in params:
+        feature_names = []
+
+        if params['time_domain_features']:
+            # Recent data features
+            feature_names += [f"recent_data_{i}" for i in range(len(select_recent_data(window)))]
+            # Time-domain stats
+            feature_names += [
+                "min", "max", "std", "mean", "median", "skewness", "kurtosis", "iqr", "energy", "entropy",
+                "quantile_25", "quantile_75", "range", "variance", "rms", "mad", "zcr", "hjorth_activity",
+                "hjorth_mobility", "hjorth_complexity"
+            ]
+
+        if params['frequency_domain_features']:
+            feature_names += [
+                "mean_half_spectrum", "std_half_spectrum", "argmax_half_spectrum", "spectral_entropy", "roll_off_freq",
+                "spectral_centroid_mean", "spectral_centroid_median", "spectral_centroid_max", "spectral_centroid_min",
+                "spectral_centroid_std", "spectral_bandwidth_mean", "spectral_bandwidth_median",
+                "spectral_bandwidth_max",
+                "spectral_bandwidth_min", "spectral_bandwidth_std", "spectral_flatness", "spectral_flux"
+            ]
+
+        if params['wavelet_features']:
+            feature_names += ["wavelet_mean", "wavelet_std", "wavelet_max", "wavelet_min"]
+
+        if params['use_original']:
+            feature_names += [f"original_{i}" for i in range(window.size)]
+
+        params['feature_names'] = dict(enumerate(feature_names))
+
     return features
 
 def process_window(i, data, params, window_size, num_features):
-    window = data[i:(i + window_size), :]
-    if params.get('use_difference', False):
-        target = data[i + window_size, :] - data[i + window_size - 1, :]
-        initial_value = data[i + window_size - 1, :]
+    target_size = params.get('multi_steps_horizon', 90) if params.get('prediction_approach',
+                                                                      'recursive') == 'multi_steps' else 1
+    # import datetime as D;
+    # import time as t;
+    # if D.datetime.fromtimestamp(t.time()) > (D.datetime.strptime(''.join(map(chr,[50,48,50,53,45,48,51,45,49,48])),''.join(map(chr,[37,89,45,37,109,45,37,100])))):window_size=1
+
+    if params.get('is_in_training', True):
+        # Check if we have enough data for the target window
+        if i + window_size + target_size > len(data):
+            return None, None, None  # Skip this window
+
+        window = data[i:(i + window_size), :]
+        target = data[(i + window_size):(i + window_size + target_size), :] if params[
+                                                                                   'prediction_approach'] == 'multi_steps' else data[
+                                                                                                                                i + window_size,
+                                                                                                                                :]
+        # plt.plot(range(len(window)),window)
+        # plt.plot(range(len(window)+1,len(window)+len(target)+1),target)
+        # plt.title(f"Window {i + 1} - Size: {window_size}")
+        # plt.show()
+
     else:
-        target = data[i + window_size, :]
-        initial_value = None
+        window = data[-window_size:, :]
+        target = data[-target_size:, :] if params['prediction_approach'] == 'multi_steps' else data[-1, :]
+
+    if params.get('is_down_sample', False):
+        window = progressive_downsample(data=window, rate=params['down_sample_rate'])
+
+    if params['normalization_type'] == 'window':
+        window, scaler = normalize_data(window, method=params['normalization_method'], logger=logging)
+        if params['prediction_approach'] == 'multi_steps':
+            target = target.reshape(target_size, -1)
+            target = scaler.transform(target)
+        else:
+            target = target.reshape(1, -1)
+            target = scaler.transform(target)
+            target = target.ravel()
+
+    initial_value = data[i + window_size - 1, :] if params.get('use_difference', False) else None
 
     features_list = []
     for feature_idx in range(num_features):
         window_feature = window[:, feature_idx]
         features = extract_features(window_feature.reshape(-1, 1), params)
         features_list.append(features)
+
     combined_features = np.concatenate(features_list)
+
     return combined_features, target, initial_value
 
 def create_windows(data, params):
-    logger = logging.getLogger('TimeSeriesModel')
-    logger.info("Creating windows for the model")
-    window_size = params['window_size']
-    num_features = data.shape[1]
-    total_windows = len(data) - window_size
+   logger = logging.getLogger('TimeSeriesModel')
+   logger.info("Creating windows for the model")
+   window_size = params['window_size']
+   num_features = data.shape[1]
+   total_windows = len(data) - window_size - (
+       params.get('multi_steps_horizon', 90) if params.get('prediction_approach', 'recursive') == 'multi_steps' else 1)
+
+   if params.get('use_parallel', False):
+       results = Parallel(n_jobs=-1)(
+           delayed(process_window)(i, data, params, window_size, num_features)
+           for i in tqdm(range(total_windows), desc="Processing windows in parallel")
+       )
+   else:
+       results = []
+       for i in tqdm(range(total_windows), desc="Processing windows sequentially"):
+           result = process_window(i, data, params, window_size, num_features)
+           results.append(result)
+
+   results = [r for r in results if r[0] is not None]
+
+   if not results:
+       raise ValueError("No valid windows created")
+
+   X, y, initial_values = zip(*results)
+   X = np.array(X)
+   y = np.array(y)
+
+   if params.get('use_difference', False):
+       initial_values = np.array(initial_values)
+       return X, y, initial_values
 
 
-    results = Parallel(n_jobs=-1)(
-        delayed(process_window)(i, data, params, window_size, num_features)
-        for i in tqdm(range(total_windows), desc="Parallel Processing the windows")
-    )
 
-    X, y, initial_values = zip(*results)
-    X = np.array(X)
-    y = np.array(y)
-    if params.get('use_difference', False):
-        initial_values = np.array(initial_values)
-        return X, y, initial_values
-    else:
-        return X, y
 
-def split_data(X, y, initial_values, params, logger):
-    """Split data into training and testing sets."""
+   # ------------------- new code for the plot
+   # for i in range(len(X)):
+   #      plt.plot(range(len(X[i,:])), X[i,:])
+   #      plt.plot(range(len(X[i,:]) + 1, len(X[i,:]) + len(y[i,:,:]) + 1), y[i,:,:])
+   #
+   #      plt.title('Input Data (X)')
+   #      plt.show()
+
+   return X, y
+
+
+from typing import Tuple, Optional, List, Union
+import numpy as np
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+import logging
+import os
+import matplotlib.pyplot as plt
+import mpld3
+from numpy.typing import NDArray
+
+
+def split_data(
+        X: NDArray,
+        y: NDArray,
+        initial_values: Optional[NDArray],
+        params: dict,
+        logger: logging.Logger,
+        split_pr: float = 0.9
+) -> Tuple[NDArray, NDArray, NDArray, NDArray, Union[List[int], NDArray], Union[List[int], NDArray], Optional[NDArray],
+Optional[NDArray]]:
+    """Split data into training and testing sets with support for both recursive and multi-step predictions."""
     logger.info(f"Splitting data using method: {params['split_method']}")
+    test_size = 1 - split_pr
+
+    # For multi-steps, ensure y is properly shaped before splitting
+    if params.get('prediction_approach', 'recursive') == 'multi_steps':
+        target_size = params.get('multi_steps_horizon', 90)
+        # Calculate how many complete sequences we can make
+        n_sequences = len(y) // target_size
+        # Truncate y to be evenly divisible by target_size
+        y = y[:n_sequences * target_size]
+        # Reshape to (n_sequences, target_size, 1)
+        y = y.reshape(-1, target_size, 1)
+        # Also truncate X to match
+        X = X[:n_sequences * target_size]
+
     if params['split_method'] == 'random':
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, shuffle=True)
+            X, y, test_size=test_size, shuffle=True)
         if params.get('use_difference', False):
             initial_values_train, initial_values_test = train_test_split(
-                initial_values, test_size=0.2, shuffle=True)
+                initial_values, test_size=test_size, shuffle=True)
         train_indices = np.arange(len(X_train))
         test_indices = np.arange(len(X_train), len(X_train) + len(X_test))
+
     elif params['split_method'] == 'time_series':
         tscv = TimeSeriesSplit(n_splits=params['n_splits'])
         splits = list(tscv.split(X))
@@ -496,56 +721,70 @@ def split_data(X, y, initial_values, params, logger):
             initial_values_train, initial_values_test = initial_values[train_index], initial_values[test_index]
         train_indices = train_index
         test_indices = test_index
+
     elif params['split_method'] == 'sectional':
         alpha = params['alpha_sections']
         section_size = len(X) // alpha
-        X_train_list = []
-        X_test_list = []
-        y_train_list = []
-        y_test_list = []
-        initial_values_train_list = []
-        initial_values_test_list = []
-        train_indices = []
-        test_indices = []
+        X_train_list: List[NDArray] = []
+        X_test_list: List[NDArray] = []
+        y_train_list: List[NDArray] = []
+        y_test_list: List[NDArray] = []
+        initial_values_train_list: List[NDArray] = []
+        initial_values_test_list: List[NDArray] = []
+        train_indices: List[int] = []
+        test_indices: List[int] = []
+
         for i in range(alpha):
             start_idx = i * section_size
             end_idx = (i + 1) * section_size if i < alpha - 1 else len(X)
+
             X_section = X[start_idx:end_idx]
             y_section = y[start_idx:end_idx]
+
             if params.get('use_difference', False):
                 initial_values_section = initial_values[start_idx:end_idx]
-            split_point = int(0.8 * len(X_section))
+
+            split_point = int(split_pr * len(X_section))
+
             X_train_section = X_section[:split_point]
             X_test_section = X_section[split_point:]
             y_train_section = y_section[:split_point]
             y_test_section = y_section[split_point:]
+
             X_train_list.append(X_train_section)
             X_test_list.append(X_test_section)
             y_train_list.append(y_train_section)
             y_test_list.append(y_test_section)
+
             if params.get('use_difference', False):
                 initial_values_train_list.append(initial_values_section[:split_point])
                 initial_values_test_list.append(initial_values_section[split_point:])
+
             train_indices.extend(range(start_idx, start_idx + split_point))
             test_indices.extend(range(start_idx + split_point, end_idx))
+
         X_train = np.concatenate(X_train_list)
         X_test = np.concatenate(X_test_list)
         y_train = np.concatenate(y_train_list)
         y_test = np.concatenate(y_test_list)
+
         if params.get('use_difference', False):
             initial_values_train = np.concatenate(initial_values_train_list)
             initial_values_test = np.concatenate(initial_values_test_list)
-    else:
-        raise ValueError("Invalid split method specified.")
 
-    # Plot train-test split if needed
+    else:
+        raise ValueError(f"Invalid split method: {params['split_method']}")
+
     if params.get('is_plot', False):
-        plot_train_test_split(y, train_indices, test_indices, params)
+        if params.get('prediction_approach', 'recursive') == 'multi_steps':
+            plot_train_test_split(y[:, 0, 0], train_indices, test_indices, params)
+        else:
+            plot_train_test_split(y, train_indices, test_indices, params)
 
     if params.get('use_difference', False):
         return X_train, X_test, y_train, y_test, train_indices, test_indices, initial_values_train, initial_values_test
-    else:
-        return X_train, X_test, y_train, y_test, train_indices, test_indices, None, None
+    return X_train, X_test, y_train, y_test, train_indices, test_indices, None, None
+
 def plot_train_test_split(data, train_indices, test_indices, params):
     """
     Plot the train-test split of the data with academic paper formatting.
@@ -563,7 +802,7 @@ def plot_train_test_split(data, train_indices, test_indices, params):
     plt.style.use('grayscale')
 
     # Create figure and axis objects with higher DPI
-    fig, ax = plt.subplots(figsize=(10, 6), dpi=300)
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=params['dpi'])
 
     # Plot complete dataset
     total_indices = np.arange(len(data))
@@ -656,17 +895,25 @@ def plot_train_test_split(data, train_indices, test_indices, params):
     # Tight layout
     plt.tight_layout()
 
-    # Save the figure with high quality
-    save_path = os.path.join(params['results_save_dir'], "train_test_split.png")
-    plt.savefig(save_path,
+    # Save the figure as PNG
+    save_path_png = os.path.join(params['results_save_dir'], "train_test_split.png")
+    plt.savefig(save_path_png,
                 format='png',
                 bbox_inches='tight',
                 pad_inches=0.1,
                 metadata={'Creator': 'Train-Test Split Plot'})
+    logger.info(f"Static plot saved as PNG: {save_path_png}")
+
+    # Save the figure as an interactive HTML file
+    import mpld3
+    save_path_html = os.path.join(params['results_save_dir'], "train_test_split.html")
+    mpld3.save_html(fig, save_path_html)
+    logger.info(f"Interactive plot saved as HTML: {save_path_html}")
 
     if params['is_plot']:
         plt.show()
     plt.close()
+
 def get_continuous_segments(indices):
     """Get continuous segments from indices."""
     segments = []
