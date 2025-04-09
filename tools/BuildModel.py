@@ -1,6 +1,8 @@
 import tensorflow_probability as tfp
 import tensorflow as tf
 import numpy as np
+from tensorflow.keras import layers
+
 from tensorflow.keras.layers import (
     Input,
     Concatenate,
@@ -693,51 +695,149 @@ def gp_transformer_block(inputs, d_model, num_heads, dff):
 ###############################################################################
 # 3) TRANSFORMER VARIANTS
 ###############################################################################
+@register_keras_serializable()
+def positional_encoding(sequence_length, d_model):
+    """
+    Create positional encodings for the transformer.
+    Args:
+        sequence_length: Length of the input sequence
+        d_model: Dimension of the model embeddings
+    Returns:
+        Tensor with shape (1, sequence_length, d_model) containing positional encodings
+    """
+    # Create position indices
+    positions = tf.range(start=0, limit=sequence_length, delta=1, dtype=tf.float32)
+    positions = positions[:, tf.newaxis]  # Shape: (sequence_length, 1)
+    # Create dimension indices
+    i = tf.range(start=0, limit=d_model, delta=2, dtype=tf.float32)
+    i = i[tf.newaxis, :]  # Shape: (1, d_model/2)
+    # Calculate angle rates
+    angle_rates = 1 / tf.pow(10000.0, (i / tf.cast(d_model, tf.float32)))
+    # Calculate angles
+    angle_rads = positions * angle_rates  # Shape: (sequence_length, d_model/2)
+    # Apply sin and cos
+    sin_values = tf.sin(angle_rads)  # (sequence_length, d_model/2)
+    cos_values = tf.cos(angle_rads)  # (sequence_length, d_model/2)
+    # Interleave sin and cos values
+    pos_encoding = tf.stack([sin_values, cos_values], axis=2)  # (sequence_length, d_model/2, 2)
+    pos_encoding = tf.reshape(pos_encoding, (sequence_length, d_model))  # (sequence_length, d_model)
+    # Add batch dimension
+    pos_encoding = pos_encoding[tf.newaxis, ...]  # (1, sequence_length, d_model)
+    return pos_encoding
+
+
+def transformer_encoder_block(inputs, d_model, num_heads, ff_dim, dropout_rate=0.1):
+    """
+    Transformer encoder block consisting of Multi-Head Attention and Feed Forward Network
+    """
+    # Multi-head attention
+    attn_output = MultiHeadAttention(
+        num_heads=num_heads, key_dim=d_model // num_heads)(inputs, inputs, inputs)
+    attn_output = Dropout(dropout_rate)(attn_output)
+    out1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output)
+
+    # Feed Forward Network
+    ffn_output = tf.keras.Sequential([
+        Dense(ff_dim, activation="relu"),
+        Dense(d_model),
+    ])(out1)
+    ffn_output = Dropout(dropout_rate)(ffn_output)
+    return LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
+
+
+def transformer_decoder_block(inputs, encoder_outputs, d_model, num_heads, ff_dim, dropout_rate=0.1):
+    """
+    Transformer decoder block consisting of Masked Multi-Head Attention,
+    Cross-Attention with encoder outputs, and Feed Forward Network
+    """
+    # Self attention
+    self_attn_output = MultiHeadAttention(
+        num_heads=num_heads, key_dim=d_model // num_heads)(inputs, inputs, inputs)
+    self_attn_output = Dropout(dropout_rate)(self_attn_output)
+    out1 = LayerNormalization(epsilon=1e-6)(inputs + self_attn_output)
+
+    # Cross attention with encoder outputs
+    cross_attn_output = MultiHeadAttention(
+        num_heads=num_heads, key_dim=d_model // num_heads)(out1, encoder_outputs, encoder_outputs)
+    cross_attn_output = Dropout(dropout_rate)(cross_attn_output)
+    out2 = LayerNormalization(epsilon=1e-6)(out1 + cross_attn_output)
+
+    # Feed Forward Network
+    ffn_output = tf.keras.Sequential([
+        Dense(ff_dim, activation="relu"),
+        Dense(d_model),
+    ])(out2)
+    ffn_output = Dropout(dropout_rate)(ffn_output)
+    return LayerNormalization(epsilon=1e-6)(out2 + ffn_output)
+
 
 def transformer_positional(
-    inp_shape,
-    tgt_shape,
-    model_name='transformer_positional',
-    d_model=64,
-    num_heads=4,
-    ff_dim=128,
-    dropout_rate=0.1,
+        inp_shape,
+        tgt_shape,
+        model_name='transformer_positional',
+        d_model=64,
+        num_heads=4,
+        ff_dim=128,
+        dropout_rate=0.1,
+        num_encoder_layers=4,
+        num_decoder_layers=2,
 ):
+    """
+    Complete transformer architecture for time series forecasting
+    Args:
+        inp_shape: Shape of input time series
+        tgt_shape: Shape of target time series
+        model_name: Name of the model
+        d_model: Dimension of the model
+        num_heads: Number of attention heads
+        ff_dim: Feed forward dimension
+        dropout_rate: Dropout rate
+        num_encoder_layers: Number of encoder layers
+        num_decoder_layers: Number of decoder layers
+    Returns:
+        Transformer model for time series forecasting
+    """
+    # Input shape
     inputs = Input(shape=(inp_shape[0], 1))
 
     # Embedding layer
     x = Conv1D(d_model, 1, activation="linear")(inputs)
 
-    # Positional encoding
-    sequence_length = inp_shape[0]
-    pos_encoding = positional_encoding(sequence_length, d_model)
-    x = x + pos_encoding
+    # Add positional encoding to the input
+    input_seq_length = inp_shape[0]
+    enc_pos_encoding = positional_encoding(input_seq_length, d_model)
+    encoder_inputs = x + enc_pos_encoding
 
-    # Transformer blocks
-    for _ in range(4):
-        # Multi-head attention
-        attn_output = MultiHeadAttention(
-            num_heads=num_heads, key_dim=d_model // num_heads)(x, x, x)
-        attn_output = Dropout(dropout_rate)(attn_output)
-        out1 = LayerNormalization(epsilon=1e-6)(x + attn_output)
+    # Encoder blocks
+    encoder_outputs = encoder_inputs
+    for _ in range(num_encoder_layers):
+        encoder_outputs = transformer_encoder_block(
+            encoder_outputs, d_model, num_heads, ff_dim, dropout_rate)
 
-        # Feed Forward Network
-        ffn_output = tf.keras.Sequential([
-            Dense(ff_dim, activation="relu"),
-            Dense(d_model),
-        ])(out1)
-        ffn_output = Dropout(dropout_rate)(ffn_output)
-        x = LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
+    # Create decoder inputs - we'll use the last 'prediction_length' timesteps from encoder
+    # as initial decoder input to start the autoregressive process
+    prediction_length = tgt_shape[0]
 
-    # Sequence to sequence decoder
-    decoder = GRU(d_model, return_sequences=True)(x)
+    # Initialize decoder inputs with the last part of the encoder sequence
+    # This is like an autoregressive setup where we use the last part of the input sequence
+    decoder_inputs = encoder_outputs[:, -prediction_length:, :]
 
-    # Final output layer - select only the last tgt_shape[0] timesteps
-    outputs = Conv1D(filters=1, kernel_size=1)(decoder[:, -tgt_shape[0]:, :])
+    # Add positional encoding to decoder inputs
+    dec_pos_encoding = positional_encoding(prediction_length, d_model)
+    decoder_inputs = decoder_inputs + dec_pos_encoding
 
-    model = Model(inputs, outputs,name=model_name)
+    # Decoder blocks
+    decoder_outputs = decoder_inputs
+    for _ in range(num_decoder_layers):
+        decoder_outputs = transformer_decoder_block(
+            decoder_outputs, encoder_outputs, d_model, num_heads, ff_dim, dropout_rate)
+
+    # Final output layer
+    outputs = Conv1D(filters=1, kernel_size=1)(decoder_outputs)
+
+    # Create model
+    model = Model(inputs, outputs, name=model_name)
     return model
-
 
 def transformer_gaussian(
     inp_shape,
