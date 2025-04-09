@@ -34,12 +34,12 @@ def main():
     # Define default parameters
     default_params = {
 
-        'file_path': os.path.join(root_address, 'datasets', 'internationalPassenger.csv'),
+        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_veryshort.csv'),
         'is_in_training':True,
         'prediction_approach':'multi_steps', # 'multi_steps', 'recursive'
         'multi_steps_horizon':15, # multi steps  prediction horizon
         'multi_steps_recursive':True, # in future prediction, use the first value of the multi steps and then recursively predict future
-        'window_size': 50,
+        'window_size': 1440,
         'is_down_sample':False,
         'down_sample_rate': 10,
         'normalization_type': 'window',  # 'all', 'window'
@@ -56,7 +56,7 @@ def main():
         'use_difference': False,
         'use_parallel':False,
         'epochs': 10,
-        'batch_size': 64, # 37
+        'batch_size': 16, # 37
         'patience': 150,
         'horizon': 50,
         'n_splits': 5,
