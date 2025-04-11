@@ -34,10 +34,10 @@ def main():
     # Define default parameters
     default_params = {
 
-        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_veryshort.csv'),
+        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_med3.csv'),
         'is_in_training':True,
         'prediction_approach':'multi_steps', # 'multi_steps', 'recursive'
-        'multi_steps_horizon':15, # multi steps  prediction horizon
+        'multi_steps_horizon':90, # multi steps  prediction horizon
         'multi_steps_recursive':True, # in future prediction, use the first value of the multi steps and then recursively predict future
         'window_size': 1440,
         'is_down_sample':False,
@@ -55,8 +55,8 @@ def main():
         'use_original': True,
         'use_difference': False,
         'use_parallel':False,
-        'epochs': 10,
-        'batch_size': 16, # 37
+        'epochs': 20,
+        'batch_size': 36, # 37
         'patience': 150,
         'horizon': 50,
         'n_splits': 5,
@@ -65,7 +65,7 @@ def main():
         'optimizer': 'adam',
         'learning_rate': 0.0001,
         'loss_function': 'mse',
-        'retrain':False,
+        'retrain':True,
         'model_name':'transformer_positional', # transformer_positional_gaussian, deep_cnn_lstm,   transformer_positional,transformer_gaussian,transformer_positional_gaussian
         'model_path': "./results/run_20250406_095047/",
         'params_path': "./results/run_20250406_095047/",
