@@ -34,7 +34,7 @@ def main():
     # Define default parameters
     default_params = {
 
-        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_long3.csv'),
+        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_med4.csv'),
         'is_in_training':True,
         'prediction_approach':'multi_steps', # 'multi_steps', 'recursive'
         'multi_steps_horizon':90, # multi steps  prediction horizon
@@ -67,8 +67,8 @@ def main():
         'loss_function': 'mse',
         'retrain':True,
         'model_name':'transformer_positional', # transformer_positional_gaussian, deep_cnn_lstm,   transformer_positional,transformer_gaussian,transformer_positional_gaussian
-        'model_path': "./results/run_20250406_095047/",
-        'params_path': "./results/run_20250406_095047/",
+        'model_path': "./results/run_20250413_172145/",
+        'params_path': "./results/run_20250413_172145/",
         'split_method': 'sectional',
         'save_model_option': 'best_train_loss',  # or 'latest_epoch'
         'metrics': ['mae', 'mape'],

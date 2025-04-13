@@ -11,8 +11,6 @@ huggingface-hub diffusers opencv-python \
 requests tqdm Pillow librosa \
 fastapi uvicorn jupyterlab ipywidgets PyWavelets mpld3
 
-
-
 # run the code
 !python TimeSeriesPrediction.py
 
