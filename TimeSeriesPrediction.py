@@ -34,7 +34,7 @@ def main():
     # Define default parameters
     default_params = {
 
-        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_long4.csv'),
+        'file_path': os.path.join(root_address, 'datasets', 'data_xauusd_short3.csv'),
         'is_in_training':True,
         'prediction_approach':'multi_steps', # 'multi_steps', 'recursive'
         'multi_steps_horizon':90, # multi steps  prediction horizon
