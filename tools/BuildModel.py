@@ -1,6 +1,7 @@
 import tensorflow_probability as tfp
 import tensorflow as tf
 import numpy as np
+
 from tensorflow.keras import layers
 
 from tensorflow.keras.layers import (
@@ -310,592 +311,594 @@ def tcn_model(
 # 2) TRANSFORMER COMPONENTS
 ###############################################################################
 
-class PositionalEncoding(Layer):
-    """
-    Enhanced Positional Encoding layer that combines absolute and relative position information.
-    This implementation extends the standard transformer positional encoding by adding:
-    1. Relative position awareness
-    2. Enhanced angle calculations
-    3. Customizable scaling factors
-    4. Support for longer sequences
+import tensorflow as tf
+from tensorflow.keras.layers import (
+    Layer, Dense, Dropout, LayerNormalization, Conv1D, Reshape, Input,
+    MultiHeadAttention # Using built-in MHA might be simpler, but keeping custom for now
+)
+from tensorflow.keras.models import Model
+import math # For GELU approximation if needed, though tf.nn.gelu is preferred
 
-    Args:
-        position (int): Maximum sequence length to encode
-        d_model (int): Dimensionality of the model/embedding space
-        max_relative_position (int, optional): Maximum distance to consider for relative positions.
-            Defaults to 64.
-        scaling_factor (float, optional): Scaling factor for positional encodings.
-            Defaults to 1.0.
+# --- Helper Functions (Assuming GELU is needed, tf.nn.gelu is recommended) ---
+# Using tf.nn.gelu is generally better
+def gelu(x):
     """
+    Gaussian Error Linear Unit activation function.
+    Using tf.nn.gelu(approximate=True) might be more efficient.
+    """
+    # return 0.5 * x * (1.0 + tf.math.erf(x / tf.sqrt(2.0)))
+    return tf.nn.gelu(x) # Use TensorFlow's built-in GELU
 
-    def __init__(self, position, d_model, max_relative_position=64, scaling_factor=1.0, **kwargs):
-        # Accept **kwargs and pass to super().__init__
+# --- Custom Layers (Revised RoPE and others) ---
+
+@tf.keras.utils.register_keras_serializable()
+class RotaryPositionalEmbedding(Layer):
+    """
+    Implements Rotary Position Embedding (RoPE).
+    Calculations moved to `call` to handle potentially dynamic sequence lengths.
+    """
+    def __init__(self, dim, **kwargs):
         super().__init__(**kwargs)
-        self.position = position
+        if dim % 2 != 0:
+            raise ValueError(f"Dimension ({dim}) must be even for Rotary Positional Embedding.")
+        self.dim = dim
+        self.inv_freq = None # Initialize inv_freq
+
+    def build(self, input_shape):
+        # Calculate inverse frequencies - depends only on dim
+        # Shape: (dim / 2,)
+        self.inv_freq = 1.0 / (10000 ** (tf.range(0, self.dim, 2, dtype=tf.float32) / self.dim))
+        super().build(input_shape) # Ensure superclass build is called
+
+    def call(self, x):
+        # x shape: [batch_size, seq_len, dim]
+        batch_size = tf.shape(x)[0]
+        seq_len = tf.shape(x)[1]
+        dtype = x.dtype # Use the dtype of the input tensor
+
+        # Calculate positional information based on current sequence length
+        # position shape: (seq_len,)
+        position = tf.range(seq_len, dtype=dtype)
+        # sincos_freq shape: (seq_len, dim / 2)
+        # Ensure inv_freq uses the same dtype
+        sincos_freq = tf.einsum('i,j->ij', position, tf.cast(self.inv_freq, dtype=dtype))
+        # sin shape: (seq_len, dim / 2)
+        # cos shape: (seq_len, dim / 2)
+        sin = tf.sin(sincos_freq)
+        cos = tf.cos(sincos_freq)
+
+        # Expand sin and cos for broadcasting: [1, seq_len, dim / 2]
+        sin = sin[tf.newaxis, :, :]
+        cos = cos[tf.newaxis, :, :]
+
+        # Split the last dimension to prepare for rotation
+        # x_reshape shape: [batch_size, seq_len, dim/2, 2]
+        # The feature dimension (self.dim) must be the last dimension for reshape
+        x_reshape = tf.reshape(x, [batch_size, seq_len, self.dim // 2, 2])
+        # x1, x2 shapes: [batch_size, seq_len, dim/2]
+        x1 = x_reshape[..., 0]
+        x2 = x_reshape[..., 1]
+
+        # Apply rotation using the formula:
+        # rotated_x1 = x1*cos - x2*sin
+        # rotated_x2 = x1*sin + x2*cos
+        # Broadcasting happens here: [batch_size, seq_len, dim/2] * [1, seq_len, dim/2]
+        rotated_x1 = x1 * cos - x2 * sin
+        rotated_x2 = x1 * sin + x2 * cos
+
+        # Concatenate the rotated values
+        # rotated shape: [batch_size, seq_len, dim/2, 2]
+        rotated = tf.stack([rotated_x1, rotated_x2], axis=-1)
+        # Reshape back to original dim: [batch_size, seq_len, dim]
+        rotated = tf.reshape(rotated, [batch_size, seq_len, self.dim])
+
+        return rotated
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"dim": self.dim})
+        return config
+
+@tf.keras.utils.register_keras_serializable()
+class PatchEmbedding(Layer):
+    """
+    Implements Patch Embedding for time series data.
+    """
+    def __init__(self, d_model, patch_size=24, **kwargs):
+        super().__init__(**kwargs)
         self.d_model = d_model
-        self.max_relative_position = max_relative_position
-        self.scaling_factor = scaling_factor
-
-        # Initialize absolute positional encodings
-        self.abs_pos_encoding = self.create_absolute_positional_encoding()
-        # Initialize relative positional encodings
-        self.rel_pos_encoding = self.create_relative_positional_encoding()
-
-    def get_angles(self, pos, i, d_model):
-        """
-        Calculate the angles for positional encoding using an enhanced formula.
-
-        Args:
-            pos (np.array): Position indices
-            i (np.array): Dimension indices
-            d_model (int): Model dimension size
-
-        Returns:
-            np.array: Calculated angles for the positional encoding
-        """
-        # Enhanced angle calculation with better numerical stability
-        # Using log space to prevent numerical overflow for long sequences
-        exponent = (2 * (i // 2)) / np.float32(d_model)
-        denominator = np.power(10000, exponent)
-        angles = pos / denominator
-        return angles
-
-    def create_absolute_positional_encoding(self):
-        """
-        Creates the absolute positional encoding matrix.
-        Uses sinusoidal functions to create position-dependent patterns.
-
-        Returns:
-            tf.Tensor: Absolute positional encoding matrix of shape (1, position, d_model)
-        """
-        # Create position and dimension indices
-        position_idx = np.arange(self.position)[:, np.newaxis]
-        dim_idx = np.arange(self.d_model)[np.newaxis, :]
-
-        # Calculate angles
-        angles = self.get_angles(position_idx, dim_idx, self.d_model)
-
-        # Apply sine to even indices and cosine to odd indices
-        even_idx = angles[:, 0::2]  # Even dimensions
-        odd_idx = angles[:, 1::2]  # Odd dimensions
-
-        # Create encodings using broadcasting
-        pos_encoding = np.concatenate(
-            [np.sin(even_idx), np.cos(odd_idx)],
-            axis=-1
-        )[np.newaxis, ...]
-
-        return tf.cast(pos_encoding * self.scaling_factor, tf.float32)
-
-    def create_relative_positional_encoding(self):
-        """
-        Creates the relative positional encoding matrix.
-        Considers both positive and negative relative distances.
-
-        Returns:
-            tf.Tensor: Relative positional encoding matrix
-        """
-        # Create relative position indices from -max_relative_position to +max_relative_position
-        positions = np.arange(-self.max_relative_position, self.max_relative_position + 1)
-        pos_idx = positions[:, np.newaxis]
-        dim_idx = np.arange(self.d_model)[np.newaxis, :]
-
-        # Calculate angles for relative positions
-        angles = self.get_angles(pos_idx, dim_idx, self.d_model)
-
-        # Apply sine and cosine functions
-        even_idx = angles[:, 0::2]
-        odd_idx = angles[:, 1::2]
-
-        rel_pos_encoding = np.concatenate(
-            [np.sin(even_idx), np.cos(odd_idx)],
-            axis=-1
+        self.patch_size = patch_size
+        # Define layers in init or build
+        self.projection = Conv1D(
+            filters=d_model,
+            kernel_size=patch_size,
+            strides=patch_size,
+            padding="valid",
+            name='patch_projection' # Add name for clarity
         )
+        # The target shape for Reshape should not include the batch dimension
+        self.flatten = Reshape((-1, d_model), name='patch_flatten') # Target shape: (num_patches, d_model)
 
-        return tf.cast(rel_pos_encoding * self.scaling_factor, tf.float32)
+    def build(self, input_shape):
+        # You can also define layers here if they depend on input_shape
+        # self.projection = Conv1D(...)
+        # self.flatten = Reshape(...)
+        super().build(input_shape)
 
-    def get_relative_attention_weights(self, seq_len):
-        """
-        Calculate relative attention weights for a given sequence length.
+    def call(self, x):
+        # x shape: (batch_size, seq_len, features) e.g., (None, 1440, 1)
+        x = self.projection(x) # (None, num_patches, d_model) e.g., (None, 60, 128)
+        x = self.flatten(x)     # (None, num_patches, d_model) - Reshape might be redundant if Conv1D output is already correct
+        return x
 
-        Args:
-            seq_len (int): Length of the input sequence
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "patch_size": self.patch_size
+        })
+        return config
 
-        Returns:
-            tf.Tensor: Relative attention weights matrix
-        """
-        # Create a matrix of relative positions
-        positions = tf.range(seq_len)[:, tf.newaxis] - tf.range(seq_len)[tf.newaxis, :]
+# Keep custom MHA and CrossAttention as they are, assuming they work as intended
+# Or replace with tf.keras.layers.MultiHeadAttention for simplicity/robustness
+@tf.keras.utils.register_keras_serializable()
+class MultiHeadSelfAttention(Layer):
+    """
+    Custom Multi-head Self-Attention layer.
+    Consider using tf.keras.layers.MultiHeadAttention.
+    """
+    def __init__(self, d_model, num_heads, dropout_rate=0.1, **kwargs):
+        super().__init__(**kwargs)
+        if d_model % num_heads != 0:
+             raise ValueError(f"d_model ({d_model}) must be divisible by num_heads ({num_heads})")
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dropout_rate = dropout_rate
+        self.depth = d_model // num_heads
 
-        # Clip relative positions to max_relative_position
-        positions = tf.clip_by_value(
-            positions,
-            -self.max_relative_position,
-            self.max_relative_position
-        )
+        self.wq = Dense(d_model, name='q_dense')
+        self.wk = Dense(d_model, name='k_dense')
+        self.wv = Dense(d_model, name='v_dense')
+        self.dropout_layer = Dropout(dropout_rate) # Renamed to avoid conflict
+        self.dense = Dense(d_model, name='out_dense')
 
-        # Shift positions to be non-negative for indexing
-        positions = positions + self.max_relative_position
+    def split_heads(self, x, batch_size):
+        """Split the last dimension into (num_heads, depth)."""
+        x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
+        return tf.transpose(x, perm=[0, 2, 1, 3]) # (batch_size, num_heads, seq_len, depth)
 
-        # Get relative encodings for these positions
-        return tf.gather(self.rel_pos_encoding, positions)
+    def call(self, inputs, mask=None):
+        # inputs shape: (batch_size, seq_len, d_model)
+        batch_size = tf.shape(inputs)[0]
 
-    def call(self, inputs):
-        """
-        Apply positional encoding to the input.
-        Combines both absolute and relative position information.
+        q = self.wq(inputs)  # (batch_size, seq_len_q, d_model)
+        k = self.wk(inputs)  # (batch_size, seq_len_k, d_model)
+        v = self.wv(inputs)  # (batch_size, seq_len_v, d_model)
 
-        Args:
-            inputs (tf.Tensor): Input tensor of shape (batch_size, seq_len, d_model)
+        q = self.split_heads(q, batch_size)  # (batch_size, num_heads, seq_len_q, depth)
+        k = self.split_heads(k, batch_size)  # (batch_size, num_heads, seq_len_k, depth)
+        v = self.split_heads(v, batch_size)  # (batch_size, num_heads, seq_len_v, depth)
 
-        Returns:
-            tf.Tensor: Tensor with positional encoding applied
-        """
-        seq_len = tf.shape(inputs)[1]
+        # Scaled dot-product attention
+        # matmul_qk shape: (batch_size, num_heads, seq_len_q, seq_len_k)
+        matmul_qk = tf.matmul(q, k, transpose_b=True)
 
-        # Get absolute positional encoding for the current sequence length
-        abs_pos = self.abs_pos_encoding[:, :seq_len, :]
+        # Scale matmul_qk
+        dk = tf.cast(self.depth, tf.float32)
+        scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
 
-        # Combine absolute positions with inputs
-        enhanced_inputs = inputs + abs_pos
+        # Apply mask if provided
+        if mask is not None:
+            # The mask needs to broadcast correctly, e.g., (batch_size, 1, 1, seq_len_k)
+            scaled_attention_logits += (mask * -1e9)
 
-        # Add relative position information
-        rel_pos = self.get_relative_attention_weights(seq_len)
+        # Softmax is normalized on the last axis (seq_len_k)
+        # attention_weights shape: (batch_size, num_heads, seq_len_q, seq_len_k)
+        attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)
 
-        # Scale the output
-        output = enhanced_inputs * tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+        # Apply dropout to attention weights
+        attention_weights = self.dropout_layer(attention_weights) # Use the dropout layer instance
+
+        # output shape: (batch_size, num_heads, seq_len_q, depth)
+        output = tf.matmul(attention_weights, v)
+
+        # Transpose back: (batch_size, seq_len_q, num_heads, depth)
+        output = tf.transpose(output, perm=[0, 2, 1, 3])
+
+        # Concatenate heads: (batch_size, seq_len_q, d_model)
+        concat_attention = tf.reshape(output, (batch_size, -1, self.d_model))
+
+        # Apply final linear layer: (batch_size, seq_len_q, d_model)
+        output = self.dense(concat_attention)
 
         return output
 
     def get_config(self):
-        """
-        Get configuration for serialization.
-
-        Returns:
-            dict: Configuration dictionary
-        """
         config = super().get_config()
         config.update({
-            'position': self.position,
-            'd_model': self.d_model,
-            'max_relative_position': self.max_relative_position,
-            'scaling_factor': self.scaling_factor
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dropout_rate": self.dropout_rate
         })
         return config
-    @classmethod
-    def from_config(cls, config):
-        """
-        Create a layer instance from its config.
-        """
-        return cls(**config)
 
-def transformer_block(inputs, num_heads, d_model, dff, dropout_rate):
+@tf.keras.utils.register_keras_serializable()
+class CrossAttention(Layer):
     """
-    Enhanced transformer block with multi-head attention and additional features
+    Custom Cross-Attention layer.
+    Consider using tf.keras.layers.MultiHeadAttention.
     """
-    # Multi-head attention with dropout
-    attn_output = MultiHeadAttention(
-        num_heads=num_heads,
-        key_dim=d_model//num_heads,  # Scaled key dimension
-        dropout=dropout_rate
-    )(inputs, inputs, inputs)
-    attn_output = Dropout(dropout_rate)(attn_output)
-    out1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output)
-
-    # Enhanced feed-forward network
-    ffn_output = point_wise_feed_forward_network(out1, dff, d_model, dropout_rate)
-    ffn_output = Dropout(dropout_rate)(ffn_output)
-    out2 = LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
-
-    return out2
-
-def point_wise_feed_forward_network(x, dff, d_model, dropout_rate):
-    """
-    Enhanced feed-forward network with additional activation and dropout
-    """
-    x = Dense(dff, activation='relu')(x)
-    x = Dropout(dropout_rate)(x)
-    x = Dense(dff//2, activation='gelu')(x)  # Additional layer with GELU
-    x = Dropout(dropout_rate)(x)
-    return Dense(d_model)(x)
-
-@register_keras_serializable()
-def positional_encoding(sequence_length, d_model):
-    """
-    Create positional encodings for the transformer.
-
-    Args:
-        sequence_length: Length of the input sequence
-        d_model: Dimension of the model embeddings
-
-    Returns:
-        Tensor with shape (1, sequence_length, d_model) containing positional encodings
-    """
-    # Create position indices
-    positions = tf.range(start=0, limit=sequence_length, delta=1, dtype=tf.float32)
-    positions = positions[:, tf.newaxis]  # Shape: (sequence_length, 1)
-
-    # Create dimension indices
-    i = tf.range(start=0, limit=d_model, delta=2, dtype=tf.float32)
-    i = i[tf.newaxis, :]  # Shape: (1, d_model/2)
-
-    # Calculate angle rates
-    angle_rates = 1 / tf.pow(10000.0, (i / tf.cast(d_model, tf.float32)))
-
-    # Calculate angles
-    angle_rads = positions * angle_rates  # Shape: (sequence_length, d_model/2)
-
-    # Apply sin and cos
-    sin_values = tf.sin(angle_rads)  # (sequence_length, d_model/2)
-    cos_values = tf.cos(angle_rads)  # (sequence_length, d_model/2)
-
-    # Interleave sin and cos values
-    pos_encoding = tf.stack([sin_values, cos_values], axis=2)  # (sequence_length, d_model/2, 2)
-    pos_encoding = tf.reshape(pos_encoding, (sequence_length, d_model))  # (sequence_length, d_model)
-
-    # Add batch dimension
-    pos_encoding = pos_encoding[tf.newaxis, ...]  # (1, sequence_length, d_model)
-
-    return pos_encoding
-
-
-def get_angles(positions, i, d_model):
-    angle_rates = 1 / tf.pow(10000, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
-    return positions * angle_rates
-
-
-@register_keras_serializable()
-class GPKernelAttention(Layer):
-    def __init__(self, d_model, num_heads, **kwargs):
-        super(GPKernelAttention, self).__init__(**kwargs)
+    def __init__(self, d_model, num_heads, dropout_rate=0.1, **kwargs):
+        super().__init__(**kwargs)
+        if d_model % num_heads != 0:
+             raise ValueError(f"d_model ({d_model}) must be divisible by num_heads ({num_heads})")
         self.d_model = d_model
         self.num_heads = num_heads
+        self.dropout_rate = dropout_rate
         self.depth = d_model // num_heads
 
-        # Initialize these as None - they will be created in build()
-        self.wq = None
-        self.wk = None
-        self.wv = None
-        self.dense = None
-        self.kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=1.0)
-
-    def build(self, input_shape):
-        # Create the layers
-        self.wq = Dense(self.d_model)
-        self.wk = Dense(self.d_model)
-        self.wv = Dense(self.d_model)
-        self.dense = Dense(self.d_model)
-
-        # Build each dense layer
-        input_shape_dense = tf.TensorShape([input_shape[0], input_shape[1], input_shape[2]])
-        self.wq.build(input_shape_dense)
-        self.wk.build(input_shape_dense)
-        self.wv.build(input_shape_dense)
-        self.dense.build(tf.TensorShape([input_shape[0], input_shape[1], self.d_model]))
-
-        # Initialize the trainable weights list using the parent class's mechanism
-        self._trainable_weights = []
-
-        # Add weights from each dense layer
-        self._trainable_weights.extend(self.wq.trainable_weights)
-        self._trainable_weights.extend(self.wk.trainable_weights)
-        self._trainable_weights.extend(self.wv.trainable_weights)
-        self._trainable_weights.extend(self.dense.trainable_weights)
-
-        super(GPKernelAttention, self).build(input_shape)
+        self.wq = Dense(d_model, name='q_dense')
+        self.wk = Dense(d_model, name='k_dense')
+        self.wv = Dense(d_model, name='v_dense')
+        self.dropout_layer = Dropout(dropout_rate) # Renamed
+        self.dense = Dense(d_model, name='out_dense')
 
     def split_heads(self, x, batch_size):
+        """Split the last dimension into (num_heads, depth)."""
         x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
-        return tf.transpose(x, perm=[0, 2, 1, 3])
+        return tf.transpose(x, perm=[0, 2, 1, 3]) # (batch_size, num_heads, seq_len, depth)
 
-    def compute_output_shape(self, input_shape):
-        return input_shape
+    def call(self, queries, keys, values, mask=None):
+        # queries shape: (batch_size, seq_len_q, d_model)
+        # keys shape: (batch_size, seq_len_k, d_model)
+        # values shape: (batch_size, seq_len_v, d_model) - seq_len_k == seq_len_v typically
+        batch_size = tf.shape(queries)[0]
 
-    def call(self, inputs, mask=None):
-        # Unpack inputs if they're passed as a list/tuple
-        if isinstance(inputs, (list, tuple)):
-            q, k, v = inputs
-        else:
-            q = k = v = inputs
+        q = self.wq(queries)  # (batch_size, seq_len_q, d_model)
+        k = self.wk(keys)    # (batch_size, seq_len_k, d_model)
+        v = self.wv(values)  # (batch_size, seq_len_v, d_model)
 
-        batch_size = tf.shape(q)[0]
+        q = self.split_heads(q, batch_size)  # (batch_size, num_heads, seq_len_q, depth)
+        k = self.split_heads(k, batch_size)  # (batch_size, num_heads, seq_len_k, depth)
+        v = self.split_heads(v, batch_size)  # (batch_size, num_heads, seq_len_v, depth)
 
-        # Linear projections
-        q = self.wq(q)
-        k = self.wk(k)
-        v = self.wv(v)
+        # Scaled dot-product attention
+        matmul_qk = tf.matmul(q, k, transpose_b=True) # (batch_size, num_heads, seq_len_q, seq_len_k)
 
-        # Split into heads
-        q = self.split_heads(q, batch_size)
-        k = self.split_heads(k, batch_size)
-        v = self.split_heads(v, batch_size)
+        dk = tf.cast(self.depth, tf.float32)
+        scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
 
-        # Reshape for kernel computation
-        q = tf.reshape(q, (batch_size * self.num_heads, -1, self.depth))
-        k = tf.reshape(k, (batch_size * self.num_heads, -1, self.depth))
-        v = tf.reshape(v, (batch_size * self.num_heads, -1, self.depth))
-
-        # Compute pairwise distances
-        dists = (
-                tf.reduce_sum(q ** 2, axis=2, keepdims=True)
-                - 2 * tf.matmul(q, k, transpose_b=True)
-                + tf.transpose(tf.reduce_sum(k ** 2, axis=2, keepdims=True), [0, 2, 1])
-        )
-
-        # RBF kernel
-        attn = tf.exp(-0.5 * dists / (self.kernel.length_scale ** 2))
-
-        # Optional mask
         if mask is not None:
-            attn += (mask * -1e9)
+            scaled_attention_logits += (mask * -1e9)
 
-        # Softmax
-        attn = tf.nn.softmax(attn, axis=-1)
+        attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1) # (batch_size, num_heads, seq_len_q, seq_len_k)
+        attention_weights = self.dropout_layer(attention_weights) # Use dropout layer instance
 
-        # Weighted sum
-        output = tf.matmul(attn, v)
+        output = tf.matmul(attention_weights, v) # (batch_size, num_heads, seq_len_q, depth)
+        output = tf.transpose(output, perm=[0, 2, 1, 3]) # (batch_size, seq_len_q, num_heads, depth)
+        concat_attention = tf.reshape(output, (batch_size, -1, self.d_model)) # (batch_size, seq_len_q, d_model)
+        output = self.dense(concat_attention) # (batch_size, seq_len_q, d_model)
 
-        # Reshape back
-        output = tf.reshape(
-            output,
-            (batch_size, self.num_heads, -1, self.depth)
-        )
-        output = tf.transpose(output, perm=[0, 2, 1, 3])
-        output = tf.reshape(output, (batch_size, -1, self.d_model))
-
-        return self.dense(output)
+        return output
 
     def get_config(self):
-        config = super(GPKernelAttention, self).get_config()
+        config = super().get_config()
         config.update({
-            'd_model': self.d_model,
-            'num_heads': self.num_heads,
+            "d_model": self.d_model,
+            "num_heads": self.num_heads,
+            "dropout_rate": self.dropout_rate
         })
         return config
 
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
-def gp_transformer_block(inputs, d_model, num_heads, dff):
+@tf.keras.utils.register_keras_serializable()
+class ClassTokenLayer(Layer):
+    """ Adds a learnable class token to the input sequence. """
+    def __init__(self, d_model, **kwargs):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+
+    def build(self, input_shape):
+        # input_shape: (batch_size, seq_len, d_model)
+        self.cls_token = self.add_weight(
+            shape=(1, 1, self.d_model), # Shape (1, 1, d_model) for easy concatenation
+            initializer='random_normal',
+            trainable=True,
+            name='cls_token'
+        )
+        super().build(input_shape)
+
+    def call(self, inputs):
+        # inputs shape: (batch_size, seq_len, d_model)
+        batch_size = tf.shape(inputs)[0]
+        # Repeat cls_token along batch dimension
+        cls_tokens = tf.repeat(self.cls_token, repeats=batch_size, axis=0) # (batch_size, 1, d_model)
+        # Concatenate along the sequence dimension (axis=1)
+        return tf.concat([cls_tokens, inputs], axis=1) # (batch_size, seq_len + 1, d_model)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"d_model": self.d_model})
+        return config
+
+@tf.keras.utils.register_keras_serializable()
+class DecoderInitializer(Layer):
+    """ Initializes decoder inputs, e.g., with zeros. """
+    def __init__(self, d_model, seq_length, **kwargs):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.seq_length = seq_length # Target sequence length for decoder input
+
+    def build(self, input_shape):
+        # Doesn't necessarily depend on input_shape if just creating zeros
+        super().build(input_shape)
+
+    def call(self, reference_tensor):
+        # Use a reference tensor (like encoder output) to get batch size and dtype
+        batch_size = tf.shape(reference_tensor)[0]
+        dtype = reference_tensor.dtype
+        # Return zeros of shape (batch_size, target_seq_length, d_model)
+        return tf.zeros([batch_size, self.seq_length, self.d_model], dtype=dtype)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "d_model": self.d_model,
+            "seq_length": self.seq_length
+        })
+        return config
+
+# --- Feed Forward Network ---
+def feed_forward_network(d_model, hidden_dim, dropout_rate=0.1, name="feed_forward_network"):
+    """ Position-wise Feed-Forward Network with GELU activation. """
+    return tf.keras.Sequential([
+        Dense(hidden_dim, activation=gelu, name='ffn_dense_1'),
+        Dropout(dropout_rate),
+        Dense(d_model, name='ffn_dense_2'),
+        Dropout(dropout_rate)
+    ], name=name)
+
+# --- Masking Functions (Unchanged) ---
+
+def create_padding_mask(seq):
+    """ Creates mask for padding tokens (assuming 0 is padding). """
+    seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
+    # Add extra dimensions to add the padding to the attention logits.
+    return seq[:, tf.newaxis, tf.newaxis, :]  # (batch_size, 1, 1, seq_len)
+
+def create_look_ahead_mask(size):
+    """ Creates a look-ahead mask for decoder self-attention. """
+    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+    return mask  # (seq_len, seq_len)
+
+@tf.keras.utils.register_keras_serializable()
+class LookAheadMaskLayer(Layer):
+    """Creates a look-ahead mask for decoder self-attention based on input shape."""
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def call(self, inputs):
+        # inputs shape: (batch_size, seq_len, d_model)
+        seq_len = tf.shape(inputs)[1]  # Get sequence length dynamically
+        mask = create_look_ahead_mask(seq_len)  # Create look-ahead mask
+        # Expand mask dimensions to (batch_size, 1, seq_len, seq_len) for attention
+        mask = mask[tf.newaxis, tf.newaxis, :, :]  # Shape: (1, 1, seq_len, seq_len)
+        return mask
+
+    def get_config(self):
+        return super().get_config()
+
+# --- Transformer Blocks (Revised RoPE Application) ---
+def transformer_encoder_block(inputs, d_model, num_heads, ff_dim, dropout_rate=0.1, name="encoder_block"):
     """
-    A single transformer block using Gaussian Process Kernel Attention.
+    Transformer encoder block with pre-RoPE application.
     """
-    # GP Attention
-    attention_layer = GPKernelAttention(d_model, num_heads)
-    gp_attn = attention_layer(inputs)
-    out1 = LayerNormalization(epsilon=1e-6)(inputs + gp_attn)
+    with tf.name_scope(name):
+        # Apply rotary positional embedding with a unique name
+        rotated_inputs = RotaryPositionalEmbedding(d_model, name=f"rope_{name}")(inputs)
 
-    # Feed Forward
-    ffn = Dense(dff, activation='relu')(out1)
-    ffn = Dense(d_model)(ffn)
-    out2 = LayerNormalization(epsilon=1e-6)(out1 + ffn)
+        # Multi-head self-attention on rotated inputs with a unique name
+        attn_output = MultiHeadSelfAttention(
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            name=f"self_attention_{name}"
+        )(rotated_inputs)
 
-    return out2
+        attn_output = Dropout(dropout_rate)(attn_output)
+        # Residual connection from *original* inputs with a unique name
+        out1 = LayerNormalization(epsilon=1e-6, name=f"layernorm_1_{name}")(inputs + attn_output)
 
-###############################################################################
-# 3) TRANSFORMER VARIANTS
-###############################################################################
-@register_keras_serializable()
-def positional_encoding(sequence_length, d_model):
+        # Feed Forward Network
+        ffn_output = feed_forward_network(d_model, ff_dim, dropout_rate, name=f"ffn_{name}")(out1)
+
+        # Residual connection with a unique name
+        out2 = LayerNormalization(epsilon=1e-6, name=f"layernorm_2_{name}")(out1 + ffn_output)
+        return out2
+
+def transformer_decoder_block(inputs, encoder_outputs, d_model, num_heads, ff_dim, dropout_rate=0.1, name="decoder_block"):
     """
-    Create positional encodings for the transformer.
-    Args:
-        sequence_length: Length of the input sequence
-        d_model: Dimension of the model embeddings
-    Returns:
-        Tensor with shape (1, sequence_length, d_model) containing positional encodings
+    Transformer decoder block with pre-RoPE for self-attention.
     """
-    # Create position indices
-    positions = tf.range(start=0, limit=sequence_length, delta=1, dtype=tf.float32)
-    positions = positions[:, tf.newaxis]  # Shape: (sequence_length, 1)
-    # Create dimension indices
-    i = tf.range(start=0, limit=d_model, delta=2, dtype=tf.float32)
-    i = i[tf.newaxis, :]  # Shape: (1, d_model/2)
-    # Calculate angle rates
-    angle_rates = 1 / tf.pow(10000.0, (i / tf.cast(d_model, tf.float32)))
-    # Calculate angles
-    angle_rads = positions * angle_rates  # Shape: (sequence_length, d_model/2)
-    # Apply sin and cos
-    sin_values = tf.sin(angle_rads)  # (sequence_length, d_model/2)
-    cos_values = tf.cos(angle_rads)  # (sequence_length, d_model/2)
-    # Interleave sin and cos values
-    pos_encoding = tf.stack([sin_values, cos_values], axis=2)  # (sequence_length, d_model/2, 2)
-    pos_encoding = tf.reshape(pos_encoding, (sequence_length, d_model))  # (sequence_length, d_model)
-    # Add batch dimension
-    pos_encoding = pos_encoding[tf.newaxis, ...]  # (1, sequence_length, d_model)
-    return pos_encoding
+    with tf.name_scope(name):
+        # Apply rotary positional embedding with a unique name
+        rotated_inputs = RotaryPositionalEmbedding(d_model, name=f"rope_{name}")(inputs)
 
+        # Create look-ahead mask using the custom layer
+        look_ahead_mask = LookAheadMaskLayer(name=f"look_ahead_mask_{name}")(rotated_inputs)
 
-def transformer_encoder_block(inputs, d_model, num_heads, ff_dim, dropout_rate=0.1):
-    """
-    Transformer encoder block consisting of Multi-Head Attention and Feed Forward Network
-    """
-    # Multi-head attention
-    attn_output = MultiHeadAttention(
-        num_heads=num_heads, key_dim=d_model // num_heads)(inputs, inputs, inputs)
-    attn_output = Dropout(dropout_rate)(attn_output)
-    out1 = LayerNormalization(epsilon=1e-6)(inputs + attn_output)
+        # Masked Multi-head self-attention on rotated inputs with a unique name
+        self_attn_output = MultiHeadSelfAttention(
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            name=f"masked_self_attention_{name}"
+        )(rotated_inputs, mask=look_ahead_mask)
 
-    # Feed Forward Network
-    ffn_output = tf.keras.Sequential([
-        Dense(ff_dim, activation="relu"),
-        Dense(d_model),
-    ])(out1)
-    ffn_output = Dropout(dropout_rate)(ffn_output)
-    return LayerNormalization(epsilon=1e-6)(out1 + ffn_output)
+        self_attn_output = Dropout(dropout_rate)(self_attn_output)
+        # Residual connection from *original* decoder inputs with a unique name
+        out1 = LayerNormalization(epsilon=1e-6, name=f"layernorm_1_{name}")(inputs + self_attn_output)
 
+        # Cross attention with *original* (non-rotated) encoder outputs
+        cross_attn_output = CrossAttention(
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            name=f"cross_attention_{name}"
+        )(queries=out1, keys=encoder_outputs, values=encoder_outputs)
 
-def transformer_decoder_block(inputs, encoder_outputs, d_model, num_heads, ff_dim, dropout_rate=0.1):
-    """
-    Transformer decoder block consisting of Masked Multi-Head Attention,
-    Cross-Attention with encoder outputs, and Feed Forward Network
-    """
-    # Self attention
-    self_attn_output = MultiHeadAttention(
-        num_heads=num_heads, key_dim=d_model // num_heads)(inputs, inputs, inputs)
-    self_attn_output = Dropout(dropout_rate)(self_attn_output)
-    out1 = LayerNormalization(epsilon=1e-6)(inputs + self_attn_output)
+        cross_attn_output = Dropout(dropout_rate)(cross_attn_output)
+        # Residual connection with a unique name
+        out2 = LayerNormalization(epsilon=1e-6, name=f"layernorm_2_{name}")(out1 + cross_attn_output)
 
-    # Cross attention with encoder outputs
-    cross_attn_output = MultiHeadAttention(
-        num_heads=num_heads, key_dim=d_model // num_heads)(out1, encoder_outputs, encoder_outputs)
-    cross_attn_output = Dropout(dropout_rate)(cross_attn_output)
-    out2 = LayerNormalization(epsilon=1e-6)(out1 + cross_attn_output)
+        # Feed Forward Network
+        ffn_output = feed_forward_network(d_model, ff_dim, dropout_rate, name=f"ffn_{name}")(out2)
 
-    # Feed Forward Network
-    ffn_output = tf.keras.Sequential([
-        Dense(ff_dim, activation="relu"),
-        Dense(d_model),
-    ])(out2)
-    ffn_output = Dropout(dropout_rate)(ffn_output)
-    return LayerNormalization(epsilon=1e-6)(out2 + ffn_output)
+        # Residual connection with a unique name
+        out3 = LayerNormalization(epsilon=1e-6, name=f"layernorm_3_{name}")(out2 + ffn_output)
+        return out3
 
+@tf.keras.utils.register_keras_serializable()
+class SliceToTargetLength(Layer):
+    """Slices the input tensor to the specified target length along the time dimension."""
+    def __init__(self, target_length, **kwargs):
+        super().__init__(**kwargs)
+        self.target_length = target_length
 
+    def call(self, inputs):
+        # inputs shape: (batch_size, seq_len, features)
+        # Slice to (batch_size, target_length, features)
+        return inputs[:, :self.target_length, :]
+
+    def compute_output_shape(self, input_shape):
+        # input_shape: (batch_size, seq_len, features)
+        return (input_shape[0], self.target_length, input_shape[2])
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"target_length": self.target_length})
+        return config
+
+# --- Model Definition (Revised) ---
 def transformer_positional(
-        inp_shape,
-        tgt_shape,
+        inp_shape, # e.g., (1440, 1)
+        tgt_shape, # e.g., (90, 1)
         model_name='transformer_positional',
-        d_model=64,
-        num_heads=4,
-        ff_dim=128,
+        d_model=128,
+        num_heads=8,
+        ff_dim=512,
         dropout_rate=0.1,
-        num_encoder_layers=4,
-        num_decoder_layers=2,
+        num_encoder_layers=6,
+        num_decoder_layers=4,
+        patch_size=24
 ):
     """
-    Complete transformer architecture for time series forecasting
+    Transformer architecture using PatchEmbedding and Rotary Positional Embedding.
+
     Args:
-        inp_shape: Shape of input time series
-        tgt_shape: Shape of target time series
+        inp_shape: Shape of input time series (sequence_length, features) -> (1440, 1)
+        tgt_shape: Shape of target time series (target_length, features) -> (90, 1)
         model_name: Name of the model
-        d_model: Dimension of the model
+        d_model: Dimension of the model embeddings and layers
         num_heads: Number of attention heads
-        ff_dim: Feed forward dimension
+        ff_dim: Hidden dimension of the feed-forward network
         dropout_rate: Dropout rate
-        num_encoder_layers: Number of encoder layers
-        num_decoder_layers: Number of decoder layers
+        num_encoder_layers: Number of encoder blocks
+        num_decoder_layers: Number of decoder blocks
+        patch_size: Size of patches for input embedding
     Returns:
-        Transformer model for time series forecasting
+        Compiled Keras Transformer model.
     """
-    # Input shape
-    inputs = Input(shape=(inp_shape[0], 1))
+    # Input Layer
+    # Expecting shape (batch_size, sequence_length, features)
+    inputs = Input(shape=(inp_shape[0], 1), name="input_time_series") # Use inp_shape[1] for features
 
-    # Embedding layer
-    x = Conv1D(d_model, 1, activation="linear")(inputs)
+    # --- Encoder ---
+    # 1. Patch Embedding
+    # Input: (None, 1440, 1) -> Output: (None, 1440/24, d_model) = (None, 60, 128)
+    encoder_x = PatchEmbedding(d_model, patch_size=patch_size, name="patch_embedding")(inputs)
 
-    # Add positional encoding to the input
-    input_seq_length = inp_shape[0]
-    enc_pos_encoding = positional_encoding(input_seq_length, d_model)
-    encoder_inputs = x + enc_pos_encoding
+    # 2. Add Class Token (Optional, common in ViT style models)
+    # Input: (None, 60, 128) -> Output: (None, 61, 128)
+    encoder_x = ClassTokenLayer(d_model, name="class_token")(encoder_x)
 
-    # Encoder blocks
-    encoder_outputs = encoder_inputs
-    for _ in range(num_encoder_layers):
+    # 3. Encoder Stack (with pre-RoPE)
+    # Input: (None, 61, 128) -> Output: (None, 61, 128)
+    encoder_outputs = encoder_x
+    for i in range(num_encoder_layers):
         encoder_outputs = transformer_encoder_block(
-            encoder_outputs, d_model, num_heads, ff_dim, dropout_rate)
+            encoder_outputs, d_model, num_heads, ff_dim, dropout_rate, name=f"encoder_block_{i + 1}")
 
-    # Create decoder inputs - we'll use the last 'prediction_length' timesteps from encoder
-    # as initial decoder input to start the autoregressive process
-    prediction_length = tgt_shape[0]
+    # Separate Class token and Sequence output if ClassToken was used
+    # class_token_output = encoder_outputs[:, 0, :] # Shape: (None, d_model)
+    encoder_sequence_output = encoder_outputs[:, 1:, :] # Shape: (None, 60, 128) - Use this for decoder
 
-    # Initialize decoder inputs with the last part of the encoder sequence
-    # This is like an autoregressive setup where we use the last part of the input sequence
-    decoder_inputs = encoder_outputs[:, -prediction_length:, :]
+    # --- Decoder ---
+    # 1. Initialize Decoder Input
+    # Calculate target sequence length in terms of patches/steps for the decoder
+    # The decoder needs to predict `tgt_shape[0]` steps. How this relates to patches needs careful thought.
+    # If the decoder operates on the same patch level as the encoder, the target length might be `tgt_shape[0] // patch_size`.
+    # If the decoder directly predicts the final time steps, its input length might be `tgt_shape[0]`.
+    # The original code calculated prediction_length based on patches. Let's stick to that for now.
+    # It implies the decoder outputs patch representations first.
+    # --- Decoder ---
+    # 1. Initialize Decoder Input
+    prediction_length_patches = tgt_shape[0] // patch_size + (
+        1 if tgt_shape[0] % patch_size > 0 else 0)  # 90 -> 4 patches
 
-    # Add positional encoding to decoder inputs
-    dec_pos_encoding = positional_encoding(prediction_length, d_model)
-    decoder_inputs = decoder_inputs + dec_pos_encoding
+    decoder_inputs = DecoderInitializer(
+        d_model, prediction_length_patches, name="decoder_initializer"
+    )(encoder_sequence_output)  # Output shape: (None, 4, 128)
 
-    # Decoder blocks
+    # 2. Decoder Stack (with pre-RoPE for self-attn, cross-attn with encoder seq)
     decoder_outputs = decoder_inputs
-    for _ in range(num_decoder_layers):
+    for i in range(num_decoder_layers):
         decoder_outputs = transformer_decoder_block(
-            decoder_outputs, encoder_outputs, d_model, num_heads, ff_dim, dropout_rate)
+            decoder_outputs,
+            encoder_sequence_output,
+            d_model,
+            num_heads,
+            ff_dim,
+            dropout_rate,
+            name=f"decoder_block_{i + 1}"
+        )
+    # --- Final Output ---
+    # Project decoder outputs (patch representations) to the patch size
+    # Input: (None, 4, 128) -> Output: (None, 4, patch_size) = (None, 4, 24)
+    patched_outputs = Dense(patch_size, name="patch_output_projection")(decoder_outputs)
 
-    # Final output layer
-    outputs = Conv1D(filters=1, kernel_size=1)(decoder_outputs)
+    # Reshape patches back into a continuous time series
+    # Input: (None, 4, 24) -> Output: (None, 4 * 24, 1) = (None, 96, 1)
+    # Assuming the target feature dimension is 1
+    reshaped_outputs = Reshape((-1, 1), name="reshape_to_time_series")(patched_outputs)
+
+    # Slice to the exact target length (e.g., 90)
+    # Input: (None, 96, 1) -> Output: (None, 90, 1)
+    # Using a Lambda layer for slicing
+    final_outputs = SliceToTargetLength(
+        target_length=tgt_shape[0],
+        name="slice_to_target_length"
+    )(reshaped_outputs)
 
     # Create model
-    model = Model(inputs, outputs, name=model_name)
+    model = Model(inputs=inputs, outputs=final_outputs, name=model_name)
     return model
 
-def transformer_gaussian(
-    inp_shape,
-    tgt_shape,
-    num_heads=4,
-    d_model=64,
-    dff=128,
-    model_name='transformer_gaussian',
-    n_layers=2
-):
-    """
-    Transformer with Gaussian Kernel Attention (no positional encoding).
-    """
-    inputs = Input(shape=(inp_shape[0], 1))
+# Example Usage (define shapes first)
+# INPUT_SHAPE = (1440, 1) # (Sequence Length, Features)
+# TARGET_SHAPE = (90, 1) # (Target Length, Features)
 
-    # Project input to d_model
-    x = Dense(d_model)(inputs)
+# model = transformer_positional(
+#     inp_shape=INPUT_SHAPE,
+#     tgt_shape=TARGET_SHAPE,
+#     d_model=128,
+#     num_heads=8,
+#     ff_dim=512,
+#     dropout_rate=0.1,
+#     num_encoder_layers=6,
+#     num_decoder_layers=4,
+#     patch_size=24
+# )
 
-    # Stacking GP-based transformer blocks
-    for _ in range(n_layers):
-        x = gp_transformer_block(x, d_model, num_heads, dff)
+# model.summary()
+# tf.keras.utils.plot_model(model, to_file='transformer_positional.png', show_shapes=True)
 
-    # Output
-    x = Flatten()(x)
-    outputs = Dense(tgt_shape[-1])(x)
-
-    model = Model(inputs, outputs,name=model_name)
-    return model
-
-
-def transformer_positional_gaussian(
-    inp_shape,
-    tgt_shape,
-    num_heads=4,
-    d_model=64,
-    dff=128,
-    model_name = 'transformer_positional_gaussian',
-    n_layers=2
-
-):
-    """
-    Transformer with Gaussian Kernel Attention + Positional Encoding.
-    """
-    inputs = Input(shape=(inp_shape[0], 1))
-
-    # Project input to d_model
-    x = Dense(d_model)(inputs)
-
-    # Positional Encoding
-    x = PositionalEncoding(inp_shape[0], d_model)(x)
-
-    # Stacking GP-based transformer blocks
-    for _ in range(n_layers):
-        x = gp_transformer_block(x, d_model, num_heads, dff)
-
-    # Output
-    x = Flatten()(x)
-    outputs = Dense(tgt_shape[-1])(x)
-
-    model = Model(inputs, outputs,name=model_name)
-    return model

@@ -25,7 +25,7 @@ from tools.PreProcessing import (
     remove_outliers,
     normalize_data
 )
-from tools.Training import AntiPersistenceLoss
+from tools.Training import DirectionalAccuracy
 from tools.FetchData import fetch_data
 from tools.PlotPrediction import plot_future_prediction  # Import kept as-is
 
@@ -45,7 +45,7 @@ def load_model_and_params(model_path: str, params_path: str):
 
 
     model = tf.keras.models.load_model(model_path,
-                                       custom_objects={'AntiPersistenceLoss': AntiPersistenceLoss})
+                                       custom_objects={'DirectionalAccuracy': DirectionalAccuracy})
 
     with open(params_path, 'rb') as f:
         params = pickle.load(f)
@@ -381,7 +381,7 @@ def run_periodic_prediction():
     global latest_preds, latest_new_data, latest_date_time, latest_pred_update_time
 
     base_dir = "../results/run_20250223_161425" # xauusd
-    # base_dir = "../results/run_20250319_202304" # btcusdt
+    base_dir = "../results/run_20250420_140942" # btcusdt
     model_path = base_dir
     params_path = base_dir
 
